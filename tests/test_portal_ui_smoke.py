@@ -56,7 +56,13 @@ class PortalUISmokeScriptTests(unittest.TestCase):
           <div id="jobList"></div>
           <strong id="jobStoreStatus"></strong>
           <div id="actionList"></div>
+          <a href="/guide">가이드</a>
         </form>
+        """
+        guide = """
+        <h1>리서치 에이전트 포털 가이드</h1>
+        <h2>가장 안전한 실행 순서</h2>
+        <h2>Research Agent Portal과 PM Portal의 차이</h2>
         """
         js = """
         async function submitRun() {}
@@ -69,7 +75,9 @@ class PortalUISmokeScriptTests(unittest.TestCase):
 
         def fake_fetch(url: str, *, bearer_token: str | None = None, timeout_seconds: float = 10.0) -> str:
             seen.append((url, bearer_token, timeout_seconds))
-            return js if url.endswith("/assets/portal.js") else html
+            if url.endswith("/assets/portal.js"):
+                return js
+            return guide if url.endswith("/guide") else html
 
         with patch.object(portal_ui_smoke, "_fetch_text", side_effect=fake_fetch):
             portal_ui_smoke._validate_research_portal_assets(
@@ -82,6 +90,7 @@ class PortalUISmokeScriptTests(unittest.TestCase):
             seen,
             [
                 ("http://research.local/", "token", 3.0),
+                ("http://research.local/guide", "token", 3.0),
                 ("http://research.local/assets/portal.js", "token", 3.0),
             ],
         )

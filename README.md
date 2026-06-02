@@ -83,6 +83,7 @@ PYTHONPATH=src python3 -m research_agent --vault /path/to/ObsidianVault serve-po
 ```
 
 브라우저에서 `http://127.0.0.1:8780/`을 열면 한글 기본 웹포탈 화면에서 주제, 제공자, 드라이런/오프라인 옵션을 선택해 실행할 수 있습니다.
+처음 사용하는 경우 `http://127.0.0.1:8780/guide` 또는 포털 상단의 `가이드`를 열면 실행 순서, 옵션 의미, Obsidian 산출물, Research Agent Portal과 PM Portal의 차이를 볼 수 있습니다.
 웹포탈은 `/job-store-health`를 읽어 job store 총량과 cleanup preview도 함께 표시합니다. `AI Agent Archtecture` PM Portal은 `/api/job-store-health`로 이 상태를 프록시합니다.
 
 `AI Agent Archtecture` PM Portal과의 로컬 연동을 한번에 검증하려면 dry-run smoke 스크립트를 실행합니다.

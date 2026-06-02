@@ -65,6 +65,7 @@ def _validate_research_portal_assets(
 ) -> None:
     base = base_url.rstrip("/")
     html = _fetch_text(f"{base}/", bearer_token=bearer_token, timeout_seconds=timeout_seconds)
+    guide = _fetch_text(f"{base}/guide", bearer_token=bearer_token, timeout_seconds=timeout_seconds)
     js = _fetch_text(f"{base}/assets/portal.js", bearer_token=bearer_token, timeout_seconds=timeout_seconds)
     _assert_contains_all(
         html,
@@ -78,8 +79,18 @@ def _validate_research_portal_assets(
             'id="jobList"',
             'id="jobStoreStatus"',
             'id="actionList"',
+            'href="/guide"',
         ],
         label="Research Portal HTML",
+    )
+    _assert_contains_all(
+        guide,
+        [
+            "리서치 에이전트 포털 가이드",
+            "가장 안전한 실행 순서",
+            "Research Agent Portal과 PM Portal의 차이",
+        ],
+        label="Research Portal Guide",
     )
     _assert_contains_all(
         js,

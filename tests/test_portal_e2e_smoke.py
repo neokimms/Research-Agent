@@ -193,8 +193,15 @@ class PortalE2ESmokeScriptTests(unittest.TestCase):
         <form id="runForm">
           <select id="providerInput"></select>
           <strong id="jobStoreStatus"></strong>
+          <a href="/guide">가이드</a>
           <section><h2>후속 작업</h2><div id="actionList"></div></section>
         </form>
+        """
+        guide = """
+        <h1>리서치 에이전트 포털 가이드</h1>
+        <h2>가장 안전한 실행 순서</h2>
+        <h2>상황별 권장 옵션</h2>
+        <h2>Research Agent Portal과 PM Portal의 차이</h2>
         """
         js = """
         async function submitRun() {}
@@ -205,7 +212,9 @@ class PortalE2ESmokeScriptTests(unittest.TestCase):
 
         def fake_request_text(url: str, *, bearer_token: str | None = None) -> str:
             seen.append((url, bearer_token))
-            return js if url.endswith("/assets/portal.js") else html
+            if url.endswith("/assets/portal.js"):
+                return js
+            return guide if url.endswith("/guide") else html
 
         with patch.object(portal_e2e_smoke, "_request_text", side_effect=fake_request_text):
             portal_e2e_smoke._verify_research_portal_static("http://research.local/", bearer_token="token")
@@ -214,6 +223,7 @@ class PortalE2ESmokeScriptTests(unittest.TestCase):
             seen,
             [
                 ("http://research.local/", "token"),
+                ("http://research.local/guide", "token"),
                 ("http://research.local/assets/portal.js", "token"),
             ],
         )

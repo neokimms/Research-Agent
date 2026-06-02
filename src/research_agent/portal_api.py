@@ -18,6 +18,7 @@ from .config import LLMSettings, Settings
 from .doctor import run_doctor
 from .next_actions import build_next_actions
 from .pipeline import ResearchPipeline
+from .portal_guide import render_portal_guide_html
 from .secrets import select_llm_provider
 from .timeutil import now_local
 from .vault_health import build_vault_health
@@ -377,6 +378,8 @@ class ResearchPortalAPIAdapter:
     def _static_response(self, route_path: str, *, head: bool = False) -> PortalAPIResponse | None:
         if route_path in {"/", "/index.html"}:
             return _text_response(200, "text/html; charset=utf-8", _PORTAL_HTML, head=head)
+        if route_path in {"/guide", "/guide.html"}:
+            return _text_response(200, "text/html; charset=utf-8", render_portal_guide_html(), head=head)
         if route_path == "/assets/portal.css":
             return _text_response(200, "text/css; charset=utf-8", _PORTAL_CSS, head=head)
         if route_path == "/assets/portal.js":
@@ -964,6 +967,7 @@ _PORTAL_HTML = """<!doctype html>
       <h1>리서치 에이전트 포털</h1>
     </div>
     <div class="top-actions">
+      <a class="nav-button" href="/guide">가이드</a>
       <input id="tokenInput" class="token-input" type="password" autocomplete="off" placeholder="Bearer 토큰">
       <button id="refreshButton" type="button">새로고침</button>
     </div>
@@ -1131,11 +1135,149 @@ h2 {
   gap: 10px;
 }
 
+.nav-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 14px;
+  background: #ffffff;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.nav-button:hover {
+  border-color: var(--accent);
+}
+
 .layout {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
   gap: 18px;
   padding: 24px clamp(20px, 4vw, 48px) 40px;
+}
+
+.guide-page {
+  display: grid;
+  gap: 22px;
+  padding: 24px clamp(20px, 4vw, 48px) 48px;
+}
+
+.guide-hero,
+.guide-section {
+  max-width: 1120px;
+}
+
+.guide-hero {
+  padding: 8px 0 4px;
+}
+
+.guide-hero h2 {
+  max-width: 980px;
+  font-size: 30px;
+  line-height: 1.25;
+}
+
+.guide-hero p {
+  max-width: 900px;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.guide-section {
+  display: grid;
+  gap: 14px;
+}
+
+.guide-section-head {
+  display: grid;
+  gap: 4px;
+}
+
+.step-list,
+.check-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 22px;
+}
+
+.step-list li,
+.check-list li {
+  padding: 10px 0;
+  line-height: 1.55;
+}
+
+.step-list strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.step-list span,
+.guide-section p {
+  color: var(--muted);
+}
+
+.term-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.term-grid article {
+  min-height: 142px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.term-grid h3,
+.term-grid p {
+  margin: 0;
+}
+
+.term-grid h3 {
+  margin-bottom: 8px;
+  font-size: 15px;
+}
+
+.term-grid p {
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.scenario-table {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.scenario-row {
+  display: grid;
+  grid-template-columns: 0.75fr 1fr 1.15fr;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.scenario-row:last-child {
+  border-bottom: 0;
+}
+
+.scenario-head {
+  background: var(--soft);
+  color: var(--accent-strong);
+  font-weight: 800;
 }
 
 .panel,
@@ -1399,6 +1541,14 @@ button.primary:hover {
 
   .status-grid,
   .run-form {
+    grid-template-columns: 1fr;
+  }
+
+  .guide-hero h2 {
+    font-size: 24px;
+  }
+
+  .scenario-row {
     grid-template-columns: 1fr;
   }
 }

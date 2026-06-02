@@ -78,6 +78,13 @@ curl -sS http://127.0.0.1:8780/vault-health
 curl -sS "http://127.0.0.1:8780/job-store-health?retention_days=90&retention_limit=200"
 ```
 
+브라우저 확인:
+
+- 기본 포털: `http://127.0.0.1:8780/`
+- 사용 가이드: `http://127.0.0.1:8780/guide`
+
+처음 사용하는 운영자는 먼저 가이드 페이지에서 드라이런, 오프라인, provider, 후속 작업, Obsidian 산출물의 의미를 확인한 뒤 기본 포털로 돌아와 실행한다.
+
 Bearer 모드에서 `/health`는 공개 probe로 남고, 나머지 route에는 header가 필요하다.
 
 ```bash

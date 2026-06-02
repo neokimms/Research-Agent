@@ -458,6 +458,7 @@ def _request_text(url: str, *, bearer_token: str | None = None) -> str:
 
 def _verify_research_portal_static(base_url: str, *, bearer_token: str | None = None) -> None:
     html = _request_text(f"{base_url.rstrip('/')}/", bearer_token=bearer_token)
+    guide = _request_text(f"{base_url.rstrip('/')}/guide", bearer_token=bearer_token)
     js = _request_text(f"{base_url.rstrip('/')}/assets/portal.js", bearer_token=bearer_token)
     _assert_contains_all(
         html,
@@ -467,9 +468,20 @@ def _verify_research_portal_static(base_url: str, *, bearer_token: str | None = 
             'id="providerInput"',
             'id="jobStoreStatus"',
             'id="actionList"',
+            'href="/guide"',
             "후속 작업",
         ],
         label="Research Portal HTML",
+    )
+    _assert_contains_all(
+        guide,
+        [
+            "리서치 에이전트 포털 가이드",
+            "가장 안전한 실행 순서",
+            "상황별 권장 옵션",
+            "Research Agent Portal과 PM Portal의 차이",
+        ],
+        label="Research Portal Guide",
     )
     _assert_contains_all(
         js,
