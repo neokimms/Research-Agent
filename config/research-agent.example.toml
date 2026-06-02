@@ -1,0 +1,77 @@
+[app]
+name = "obsidian-research-agent"
+timezone = "Asia/Seoul"
+
+[llm]
+provider = "auto"
+
+[common_modules]
+enabled = true
+module_path = "../Common Module/src"
+
+[obsidian]
+vault_path = "/absolute/path/to/Research"
+draft_dir = "00_Inbox"
+source_dir = "10_Sources"
+taxonomy_dir = "20_Taxonomy"
+blueprint_dir = "30_Service-Blueprints"
+evidence_dir = "50_Evidence-Ledger"
+run_dir = "60_Runs"
+overwrite_reviewed_notes = false
+
+[openai]
+api_key_env = "OPENAI_API_KEY"
+
+[openai.models]
+planner = "gpt-5.4-mini"
+extractor = "gpt-5.4-mini"
+classifier = "gpt-5.4-mini"
+synthesis = "gpt-5.5"
+cheap_triage = "gpt-5.4-nano"
+
+[gemini]
+api_key_env = "GEMINI_API_KEY"
+google_api_key_env = "GOOGLE_API_KEY"
+
+[gemini.models]
+planner = "gemini-2.5-flash"
+extractor = "gemini-2.5-flash"
+classifier = "gemini-2.5-flash"
+synthesis = "gemini-2.5-flash"
+cheap_triage = "gemini-2.5-flash"
+
+[sources]
+priority = [
+  "official-docs",
+  "standards",
+  "papers",
+  "api-metadata",
+  "engineering-articles",
+  "general-web",
+]
+official_doc_domains = [
+  "developers.openai.com",
+  "docs.langchain.com",
+  "developers.llamaindex.ai",
+  "modelcontextprotocol.io",
+  "learn.microsoft.com",
+  "cloud.google.com",
+]
+standards_domains = [
+  "nist.gov",
+  "iso.org",
+  "owasp.org",
+]
+paper_sources = [
+  "arxiv",
+  "semantic-scholar",
+  "crossref",
+  "openalex",
+]
+
+[quality_gates]
+min_official_sources = 2
+require_checked_at = true
+require_source_urls = true
+require_evidence_ledger = true
+require_uncertainty_section = true

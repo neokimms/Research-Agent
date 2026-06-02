@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "obsidian-research-agent"
+version = "0.1.0"
+description = "Obsidian-first research agent MVP for official docs, standards, and papers."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+research-agent = "research_agent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
