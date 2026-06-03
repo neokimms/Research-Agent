@@ -140,6 +140,41 @@ translation_language: ko
 """
 
 
+def render_evidence_synthesis_context(topic: str, evidence: EvidenceBundle, *, checked_at: str) -> str:
+    claim_lines = []
+    for claim in evidence.claims:
+        source = claim.source_url or claim.source_title or "No source captured."
+        claim_lines.append(
+            f"- {claim.claim_id} [{claim.confidence}, {claim.category}] {claim.claim}\n"
+            f"  - Evidence: {claim.evidence}\n"
+            f"  - Source: {source}\n"
+            f"  - Source type: {claim.source_type}"
+        )
+    if not claim_lines:
+        claim_lines.append("- No structured claims extracted yet.")
+
+    conflicts = "\n".join(f"- {item}" for item in evidence.conflicts) or "- None captured yet."
+    needs = "\n".join(f"- {item}" for item in evidence.needs_verification) or "- None captured yet."
+
+    return f"""# Evidence Context: {topic}
+
+- checked_at: {checked_at}
+- extraction_mode: {evidence.extraction_mode}
+
+## Claims
+
+{chr(10).join(claim_lines)}
+
+## Conflicts
+
+{conflicts}
+
+## Needs Verification
+
+{needs}
+"""
+
+
 def _table_cell(value: str) -> str:
     return value.replace("\n", " ").replace("|", "\\|").strip()
 

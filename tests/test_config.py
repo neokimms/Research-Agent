@@ -31,6 +31,12 @@ synthesis = "gemini-2.5-flash"
 
 [report]
 bilingual = false
+
+[quality_gates]
+block_vault_write_on_fail = true
+
+[pipeline]
+cleanup_partial_artifacts = false
 """,
                 encoding="utf-8",
             )
@@ -40,6 +46,26 @@ bilingual = false
             self.assertEqual(settings.llm.provider, "auto")
             self.assertEqual(settings.gemini.models.synthesis, "gemini-2.5-flash")
             self.assertFalse(settings.report.bilingual)
+            self.assertTrue(settings.quality_gates.block_vault_write_on_fail)
+            self.assertFalse(settings.pipeline.cleanup_partial_artifacts)
+
+    def test_rejects_invalid_timezone(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            config = Path(temp) / "config.toml"
+            vault = Path(temp) / "vault"
+            config.write_text(
+                f"""
+[app]
+timezone = "Mars/Nope"
+
+[obsidian]
+vault_path = "{vault}"
+""",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ValueError):
+                load_settings(config)
 
 
 if __name__ == "__main__":

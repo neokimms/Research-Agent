@@ -600,20 +600,23 @@ def collect_paper_sources(
     records: list[SourceRecord] = []
     for source in enabled_sources:
         try:
-            if source == "arxiv":
-                records.extend(search_arxiv(topic, limit=limit_each))
-            elif source == "semantic-scholar":
-                records.extend(search_semantic_scholar(topic, limit=limit_each))
-            elif source == "crossref":
-                records.extend(search_crossref(topic, limit=limit_each))
-            elif source == "openalex":
-                records.extend(search_openalex(topic, limit=limit_each))
-            else:
+            collector = _paper_collector(source)
+            if collector is None:
                 logger.warning(
                     "unknown paper source configured",
                     extra={"stage": "collect_papers", "source": source, "topic": topic},
                 )
                 _append_warning(warnings, source=source, detail="unknown paper source configured")
+            else:
+                records.extend(
+                    retry_call(
+                        lambda: collector(topic, limit=limit_each),
+                        label=f"paper collector {source}",
+                        logger=logger,
+                        config=RetryConfig(attempts=3, initial_delay_seconds=0.5),
+                        retryable=lambda exc: True,
+                    )
+                )
         except Exception as exc:
             logger.warning(
                 "paper collector failed",
@@ -627,6 +630,18 @@ def collect_paper_sources(
             )
             _append_warning(warnings, source=source, detail=f"{type(exc).__name__}: {exc}")
     return deduplicate_sources(records)
+
+
+def _paper_collector(source: str):
+    if source == "arxiv":
+        return search_arxiv
+    if source == "semantic-scholar":
+        return search_semantic_scholar
+    if source == "crossref":
+        return search_crossref
+    if source == "openalex":
+        return search_openalex
+    return None
 
 
 def _append_warning(warnings: list[RunWarning] | None, *, source: str, detail: str) -> None:

@@ -14,14 +14,22 @@ from .models import DryRunPlan, PlannedArtifact, RunArtifacts, RunWarning, Safet
 from .obsidian import ObsidianWriter
 from .openai_client import OpenAIError, OpenAIResponsesClient, output_text
 from .prompts import synthesis_instructions, synthesis_prompt
-from .quality import evaluate_quality_gates
-from .render import render_evidence_ledger, render_fallback_blueprint, render_run_note, render_source_note, render_topic_map
+from .quality import FAIL, evaluate_quality_gates
+from .render import render_evidence_ledger, render_evidence_synthesis_context, render_fallback_blueprint, render_run_note, render_source_note, render_topic_map
 from .secrets import ProviderSelection, select_llm_provider
-from .textutil import slugify
+from .textutil import slugify, yaml_scalar
 from .timeutil import now_local
 
 
 logger = logging.getLogger(__name__)
+MAX_TOPIC_LENGTH = 500
+
+
+class QualityGateFailure(RuntimeError):
+    def __init__(self, failures):
+        self.failures = list(failures)
+        detail = "; ".join(f"{failure.name}: {failure.detail}" for failure in self.failures)
+        super().__init__(f"Quality gate failure blocked vault write: {detail}")
 
 
 class ResearchPipeline:
@@ -41,6 +49,7 @@ class ResearchPipeline:
         max_papers_per_source: int = 2,
         rerun_of: str | None = None,
     ) -> RunArtifacts:
+        _validate_topic(topic)
         timestamp = now_local(self.settings.app.timezone)
         checked_at = timestamp.date().isoformat()
         date_prefix = timestamp.strftime("%Y-%m-%d")
@@ -67,37 +76,11 @@ class ResearchPipeline:
             offline=offline,
         )
 
-        source_paths: list[Path] = []
-        for index, source in enumerate(sources, start=1):
-            source_id = f"S{index:03d}"
-            filename = f"{date_prefix}_{slug}_source-{index:02d}.md"
-            directory = self._source_directory(source)
-            source_claims = [claim for claim in evidence.claims if claim.source_id == source_id]
-            source_paths.append(
-                self.writer.write_note(
-                    directory,
-                    filename,
-                    render_source_note(
-                        source,
-                        topic=topic,
-                        checked_at=checked_at,
-                        source_id=source_id,
-                        claims=source_claims,
-                    ),
-                )
-            )
-
         evidence_filename = f"{date_prefix}_{slug}_evidence-ledger.md"
         evidence_path_preview = self.writer.safe_path(f"{self.settings.obsidian.evidence_dir}/{evidence_filename}")
-        evidence_markdown_for_synthesis = render_evidence_ledger(topic, evidence, checked_at=checked_at)
+        evidence_markdown_for_synthesis = render_evidence_synthesis_context(topic, evidence, checked_at=checked_at)
 
         blueprint_markdown = self._synthesize_blueprint(topic, evidence_markdown_for_synthesis, sources, checked_at, offline)
-        blueprint_path = self.writer.write_note(
-            self.settings.obsidian.blueprint_dir,
-            f"{date_prefix}_{slug}_service-blueprint.md",
-            blueprint_markdown,
-        )
-
         quality_gates = evaluate_quality_gates(
             self.settings.quality_gates,
             sources=sources,
@@ -106,54 +89,91 @@ class ResearchPipeline:
             checked_at=checked_at,
             evidence_path=str(evidence_path_preview),
         )
-        evidence_markdown = render_evidence_ledger(
-            topic,
-            evidence,
-            checked_at=checked_at,
-            quality_gates=quality_gates,
-        )
-        evidence_path = self.writer.write_note(
-            self.settings.obsidian.evidence_dir,
-            evidence_filename,
-            evidence_markdown,
-        )
+        self._raise_on_quality_gate_failures(quality_gates)
 
-        topic_map_path = self.writer.write_note(
-            self.settings.obsidian.taxonomy_dir,
-            f"{date_prefix}_{slug}_topic-map.md",
-            render_topic_map(
+        created_paths: list[Path] = []
+        try:
+            source_paths: list[Path] = []
+            for index, source in enumerate(sources, start=1):
+                source_id = f"S{index:03d}"
+                filename = f"{date_prefix}_{slug}_source-{index:02d}.md"
+                directory = self._source_directory(source)
+                source_claims = [claim for claim in evidence.claims if claim.source_id == source_id]
+                source_paths.append(
+                    self._write_note(
+                        created_paths,
+                        directory,
+                        filename,
+                        render_source_note(
+                            source,
+                            topic=topic,
+                            checked_at=checked_at,
+                            source_id=source_id,
+                            claims=source_claims,
+                        ),
+                    )
+                )
+
+            blueprint_path = self._write_note(
+                created_paths,
+                self.settings.obsidian.blueprint_dir,
+                f"{date_prefix}_{slug}_service-blueprint.md",
+                blueprint_markdown,
+            )
+
+            evidence_markdown = render_evidence_ledger(
                 topic,
-                source_paths=[str(path) for path in source_paths],
-                evidence_path=str(evidence_path),
-                blueprint_path=str(blueprint_path),
                 evidence=evidence,
                 checked_at=checked_at,
-                vault_path=str(self.writer.vault_path),
-                rerun_of=rerun_of,
-            ),
-        )
-
-        artifact_paths = [*source_paths, evidence_path, blueprint_path, topic_map_path]
-        artifact_strings = [str(path) for path in artifact_paths]
-        run_filename = f"{date_prefix}_{slug}_run.md"
-        bilingual_audit_summary = None
-        if self.settings.report.bilingual:
-            audit = run_bilingual_audit(
-                self.writer.vault_path,
-                target_paths=artifact_paths,
+                quality_gates=quality_gates,
             )
-            bilingual_audit_summary = render_bilingual_audit_run_summary(audit)
-        run_markdown = render_run_note(
-            topic,
-            artifact_strings,
-            checked_at=checked_at,
-            mode="offline" if offline else provider.provider,
-            quality_gates=quality_gates,
-            warnings=warnings,
-            bilingual_audit=bilingual_audit_summary,
-            rerun_of=rerun_of,
-        )
-        run_path = self.writer.write_note(self.settings.obsidian.run_dir, run_filename, run_markdown)
+            evidence_path = self._write_note(
+                created_paths,
+                self.settings.obsidian.evidence_dir,
+                evidence_filename,
+                evidence_markdown,
+            )
+
+            topic_map_path = self._write_note(
+                created_paths,
+                self.settings.obsidian.taxonomy_dir,
+                f"{date_prefix}_{slug}_topic-map.md",
+                render_topic_map(
+                    topic,
+                    source_paths=[str(path) for path in source_paths],
+                    evidence_path=str(evidence_path),
+                    blueprint_path=str(blueprint_path),
+                    evidence=evidence,
+                    checked_at=checked_at,
+                    vault_path=str(self.writer.vault_path),
+                    rerun_of=rerun_of,
+                ),
+            )
+
+            artifact_paths = [*source_paths, evidence_path, blueprint_path, topic_map_path]
+            artifact_strings = [str(path) for path in artifact_paths]
+            run_filename = f"{date_prefix}_{slug}_run.md"
+            bilingual_audit_summary = None
+            if self.settings.report.bilingual:
+                audit = run_bilingual_audit(
+                    self.writer.vault_path,
+                    target_paths=artifact_paths,
+                )
+                bilingual_audit_summary = render_bilingual_audit_run_summary(audit)
+            run_markdown = render_run_note(
+                topic,
+                artifact_strings,
+                checked_at=checked_at,
+                mode="offline" if offline else provider.provider,
+                quality_gates=quality_gates,
+                warnings=warnings,
+                bilingual_audit=bilingual_audit_summary,
+                rerun_of=rerun_of,
+            )
+            run_path = self._write_note(created_paths, self.settings.obsidian.run_dir, run_filename, run_markdown)
+        except Exception:
+            self._cleanup_partial_artifacts(created_paths)
+            raise
 
         return RunArtifacts(
             run_note=str(run_path),
@@ -164,6 +184,7 @@ class ResearchPipeline:
         )
 
     def dry_run(self, topic: str, *, offline: bool = False, max_papers_per_source: int = 2) -> DryRunPlan:
+        _validate_topic(topic)
         timestamp = now_local(self.settings.app.timezone)
         date_prefix = timestamp.strftime("%Y-%m-%d")
         slug = slugify(topic)
@@ -373,7 +394,7 @@ class ResearchPipeline:
             )
             markdown = output_text(response)
             if markdown.strip():
-                stable_markdown = stabilize_service_blueprint(markdown, topic=topic)
+                stable_markdown = stabilize_service_blueprint(markdown, topic=topic, bilingual=self.settings.report.bilingual)
                 return self._with_frontmatter(topic, stable_markdown, checked_at=checked_at)
         except OpenAIError as exc:
             logger.warning(
@@ -407,7 +428,7 @@ class ResearchPipeline:
             )
             markdown = gemini_output_text(response)
             if markdown.strip():
-                stable_markdown = stabilize_service_blueprint(markdown, topic=topic)
+                stable_markdown = stabilize_service_blueprint(markdown, topic=topic, bilingual=self.settings.report.bilingual)
                 return self._with_frontmatter(topic, stable_markdown, checked_at=checked_at)
         except GeminiError as exc:
             logger.warning(
@@ -432,9 +453,9 @@ class ResearchPipeline:
             return body
         return f"""---
 type: service-blueprint
-topic: "{topic}"
-created_at: "{checked_at}"
-checked_at: "{checked_at}"
+topic: {yaml_scalar(topic)}
+created_at: {yaml_scalar(checked_at)}
+checked_at: {yaml_scalar(checked_at)}
 status: draft
 confidence: medium
 source_priority:
@@ -462,3 +483,43 @@ generated_by: research-agent
         if self.settings.report.bilingual:
             return "language: bilingual\noriginal_language: en\ntranslation_language: ko"
         return "language: en"
+
+    def _raise_on_quality_gate_failures(self, quality_gates) -> None:
+        if not self.settings.quality_gates.block_vault_write_on_fail:
+            return
+        failures = [gate for gate in quality_gates if gate.status == FAIL]
+        if failures:
+            raise QualityGateFailure(failures)
+
+    def _write_note(
+        self,
+        created_paths: list[Path],
+        directory: str,
+        filename: str,
+        markdown: str,
+        *,
+        allow_overwrite: bool = False,
+    ) -> Path:
+        path = self.writer.write_note(directory, filename, markdown, allow_overwrite=allow_overwrite)
+        created_paths.append(path)
+        return path
+
+    def _cleanup_partial_artifacts(self, created_paths: list[Path]) -> None:
+        if not self.settings.pipeline.cleanup_partial_artifacts:
+            return
+        for path in reversed(created_paths):
+            try:
+                if path.exists() and path.is_file():
+                    path.unlink()
+            except OSError as exc:
+                logger.warning(
+                    "partial artifact cleanup failed",
+                    extra={"stage": "partial_cleanup", "file_path": str(path), "error": str(exc)},
+                )
+
+
+def _validate_topic(topic: str) -> None:
+    if not topic.strip():
+        raise ValueError("Research topic must not be blank")
+    if len(topic) > MAX_TOPIC_LENGTH:
+        raise ValueError(f"Research topic must be {MAX_TOPIC_LENGTH} characters or fewer")

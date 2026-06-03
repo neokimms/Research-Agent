@@ -27,14 +27,16 @@ def retry_call(
     label: str,
     logger: logging.Logger,
     config: RetryConfig = RetryConfig(),
+    retryable: Callable[[Exception], bool] | None = None,
 ) -> T:
     attempts = max(1, config.attempts)
     delay = max(0.0, config.initial_delay_seconds)
+    should_retry = retryable or is_retryable_exception
     for attempt in range(1, attempts + 1):
         try:
             return operation()
         except Exception as exc:
-            if attempt >= attempts or not is_retryable_exception(exc):
+            if attempt >= attempts or not should_retry(exc):
                 raise
             logger.warning(
                 "%s failed; retrying",

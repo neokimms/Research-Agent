@@ -17,8 +17,9 @@ from research_agent.config import (
     Settings,
     SourceSettings,
 )
-from research_agent.models import SourceRecord
-from research_agent.pipeline import ResearchPipeline
+from research_agent.models import EvidenceBundle, EvidenceClaim, SourceRecord
+from research_agent.openai_client import OpenAIError
+from research_agent.pipeline import MAX_TOPIC_LENGTH, QualityGateFailure, ResearchPipeline
 
 
 class PipelineTests(unittest.TestCase):
@@ -95,6 +96,66 @@ class PipelineTests(unittest.TestCase):
             self.assertIn('mode: "gemini"', run_note)
             self.assertIn("**원본**\n\ngemini", run_note)
             self.assertIn("**한국어 번역**\n\nGemini", run_note)
+
+    def test_online_openai_synthesis_failure_falls_back_and_writes_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            settings = Settings(
+                app=AppSettings(),
+                obsidian=ObsidianSettings(vault_path=Path(temp)),
+                openai=OpenAISettings(),
+                sources=SourceSettings(
+                    official_doc_domains=["developers.openai.com"],
+                    standards_domains=[],
+                    paper_sources=[],
+                ),
+                quality_gates=QualityGateSettings(min_official_sources=1),
+            )
+
+            class FailingOpenAIClient:
+                def __init__(self, **kwargs):
+                    pass
+
+                def create(self, **kwargs):
+                    raise OpenAIError("temporary synthesis failure")
+
+            evidence = EvidenceBundle(
+                claims=[
+                    EvidenceClaim(
+                        claim_id="E001",
+                        source_id="S001",
+                        claim="Official docs support the workflow.",
+                        evidence="The official page describes the workflow.",
+                        source_title="Official Docs",
+                        source_url="https://developers.openai.com/api/docs",
+                        source_type="official-docs",
+                        confidence="high",
+                        category="baseline",
+                    )
+                ]
+            )
+
+            with patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test-123456"}, clear=True):
+                with patch.object(
+                    ResearchPipeline,
+                    "_collect_sources",
+                    return_value=[
+                        SourceRecord(
+                            title="Official Docs",
+                            url="https://developers.openai.com/api/docs",
+                            source_type="official-docs",
+                            summary="Official docs.",
+                        )
+                    ],
+                ):
+                    with patch("research_agent.pipeline.extract_evidence", return_value=evidence):
+                        with patch("research_agent.pipeline.OpenAIResponsesClient", FailingOpenAIClient):
+                            artifacts = ResearchPipeline(settings).run("online fallback", offline=False)
+
+            run_note = Path(artifacts.run_note).read_text(encoding="utf-8")
+            blueprint = Path(artifacts.service_blueprint).read_text(encoding="utf-8")
+            self.assertIn('mode: "openai"', run_note)
+            self.assertIn("Use an Obsidian-first workflow", blueprint)
+            self.assertIn("| PASS | min official sources |", run_note)
 
     def test_run_outputs_record_rerun_lineage(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -198,6 +259,75 @@ class PipelineTests(unittest.TestCase):
             self.assertIn("| FAIL | min official sources |", run_note)
             self.assertIn("| FAIL | source urls |", run_note)
             self.assertIn("| FAIL | source urls |", evidence_ledger)
+
+    def test_quality_gate_blocking_prevents_vault_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            settings = Settings(
+                app=AppSettings(),
+                obsidian=ObsidianSettings(vault_path=Path(temp)),
+                openai=OpenAISettings(api_key_env="RESEARCH_AGENT_MISSING_KEY"),
+                sources=SourceSettings(
+                    official_doc_domains=[],
+                    standards_domains=[],
+                    paper_sources=[],
+                ),
+                quality_gates=QualityGateSettings(
+                    min_official_sources=1,
+                    block_vault_write_on_fail=True,
+                ),
+            )
+
+            with patch.object(
+                ResearchPipeline,
+                "_collect_sources",
+                return_value=[SourceRecord(title="Missing URL source", url="", source_type="official-docs")],
+            ):
+                with self.assertRaises(QualityGateFailure):
+                    ResearchPipeline(settings).run("blocked quality gate", offline=False)
+
+            self.assertEqual(list(Path(temp).rglob("*.md")), [])
+
+    def test_partial_artifacts_are_cleaned_up_when_write_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            settings = Settings(
+                app=AppSettings(),
+                obsidian=ObsidianSettings(vault_path=Path(temp)),
+                openai=OpenAISettings(),
+                sources=SourceSettings(
+                    official_doc_domains=["developers.openai.com"],
+                    standards_domains=[],
+                    paper_sources=[],
+                ),
+                quality_gates=QualityGateSettings(),
+            )
+            pipeline = ResearchPipeline(settings)
+            original_write_note = pipeline.writer.write_note
+            calls = {"count": 0}
+
+            def flaky_write_note(directory, filename, markdown, *, allow_overwrite=False):
+                calls["count"] += 1
+                if calls["count"] == 2:
+                    raise RuntimeError("disk full")
+                return original_write_note(directory, filename, markdown, allow_overwrite=allow_overwrite)
+
+            with patch.object(pipeline.writer, "write_note", side_effect=flaky_write_note):
+                with self.assertRaises(RuntimeError):
+                    pipeline.run("partial cleanup", offline=True)
+
+            self.assertEqual(list(Path(temp).rglob("*.md")), [])
+
+    def test_rejects_overlong_topic_before_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            settings = Settings(
+                app=AppSettings(),
+                obsidian=ObsidianSettings(vault_path=Path(temp)),
+                openai=OpenAISettings(),
+                sources=SourceSettings(),
+                quality_gates=QualityGateSettings(),
+            )
+
+            with self.assertRaises(ValueError):
+                ResearchPipeline(settings).dry_run("x" * (MAX_TOPIC_LENGTH + 1), offline=True)
 
     def test_paper_collector_failures_are_recorded_as_run_warnings(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

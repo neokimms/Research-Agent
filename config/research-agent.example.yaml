@@ -12,6 +12,9 @@ common_modules:
 report:
   bilingual: true
 
+pipeline:
+  cleanup_partial_artifacts: true
+
 obsidian:
   vault_path: "/absolute/path/to/Research"
   draft_dir: "00_Inbox"
@@ -72,3 +75,4 @@ quality_gates:
   require_source_urls: true
   require_evidence_ledger: true
   require_uncertainty_section: true
+  block_vault_write_on_fail: false

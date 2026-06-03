@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
+MAX_SOURCE_TITLE_LENGTH = 1000
+
+
 @dataclass(frozen=True)
 class SourceRecord:
     title: str
@@ -18,6 +21,10 @@ class SourceRecord:
     source_provider: str = ""
     canonical_url: str = ""
     source_score: float = 0.0
+
+    def __post_init__(self) -> None:
+        if len(self.title) > MAX_SOURCE_TITLE_LENGTH:
+            raise ValueError(f"SourceRecord.title must be {MAX_SOURCE_TITLE_LENGTH} characters or fewer")
 
 
 @dataclass(frozen=True)
@@ -35,6 +42,10 @@ class EvidenceClaim:
     def __post_init__(self) -> None:
         if self.confidence not in {"low", "medium", "high"}:
             raise ValueError("EvidenceClaim.confidence must be one of: low, medium, high")
+        if not self.claim.strip():
+            raise ValueError("EvidenceClaim.claim must not be blank")
+        if not self.evidence.strip():
+            raise ValueError("EvidenceClaim.evidence must not be blank")
 
 
 @dataclass(frozen=True)

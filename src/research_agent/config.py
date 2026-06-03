@@ -6,6 +6,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .common_modules import configure_common_modules
 
@@ -17,6 +18,9 @@ logger = logging.getLogger(__name__)
 class AppSettings:
     name: str = "obsidian-research-agent"
     timezone: str = "Asia/Seoul"
+
+    def __post_init__(self) -> None:
+        _validate_timezone(self.timezone)
 
 
 @dataclass(frozen=True)
@@ -98,11 +102,17 @@ class QualityGateSettings:
     require_source_urls: bool = True
     require_evidence_ledger: bool = True
     require_uncertainty_section: bool = True
+    block_vault_write_on_fail: bool = False
 
 
 @dataclass(frozen=True)
 class ReportSettings:
     bilingual: bool = True
+
+
+@dataclass(frozen=True)
+class PipelineSettings:
+    cleanup_partial_artifacts: bool = True
 
 
 @dataclass(frozen=True)
@@ -116,6 +126,7 @@ class Settings:
     gemini: GeminiSettings = field(default_factory=GeminiSettings)
     common: CommonModuleSettings = field(default_factory=CommonModuleSettings)
     report: ReportSettings = field(default_factory=ReportSettings)
+    pipeline: PipelineSettings = field(default_factory=PipelineSettings)
 
 
 def load_dotenv(path: Path, *, override: bool = False, common_module_path: Path | None = None) -> None:
@@ -142,6 +153,7 @@ def load_settings(path: Path, *, vault_override: Path | None = None, provider_ov
     source_data = data.get("sources", {})
     gate_data = data.get("quality_gates", {})
     report_data = data.get("report", data.get("reports", {}))
+    pipeline_data = data.get("pipeline", {})
 
     vault_path = vault_override or Path(obsidian_data.get("vault_path", "Research"))
     common = CommonModuleSettings(
@@ -206,10 +218,14 @@ def load_settings(path: Path, *, vault_override: Path | None = None, provider_ov
             require_source_urls=bool(gate_data.get("require_source_urls", True)),
             require_evidence_ledger=bool(gate_data.get("require_evidence_ledger", True)),
             require_uncertainty_section=bool(gate_data.get("require_uncertainty_section", True)),
+            block_vault_write_on_fail=bool(gate_data.get("block_vault_write_on_fail", False)),
         ),
         common=common,
         report=ReportSettings(
             bilingual=bool(report_data.get("bilingual", True)),
+        ),
+        pipeline=PipelineSettings(
+            cleanup_partial_artifacts=bool(pipeline_data.get("cleanup_partial_artifacts", True)),
         ),
     )
 
@@ -268,3 +284,10 @@ def _resolve_optional_path(value: Any, *, project_root: Path) -> Path | None:
     if not path.is_absolute():
         path = project_root / path
     return path.resolve()
+
+
+def _validate_timezone(timezone: str) -> None:
+    try:
+        ZoneInfo(timezone)
+    except ZoneInfoNotFoundError as exc:
+        raise ValueError(f"Invalid timezone: {timezone}") from exc

@@ -272,6 +272,30 @@ class CollectorTests(unittest.TestCase):
         self.assertIn("rate limited", warnings[0].detail)
         self.assertEqual(warnings[1].source, "unknown")
 
+    def test_paper_collector_retries_transient_failures(self) -> None:
+        calls = {"count": 0}
+
+        def flaky_crossref(topic, *, limit):
+            calls["count"] += 1
+            if calls["count"] < 3:
+                raise RuntimeError("temporary outage")
+            return [
+                SourceRecord(
+                    title="Recovered Paper",
+                    url="https://doi.org/10.1145/recovered",
+                    source_type="papers",
+                    doi="10.1145/recovered",
+                    source_provider="crossref",
+                )
+            ]
+
+        with patch("research_agent.collectors.search_crossref", flaky_crossref):
+            records = collect_paper_sources("topic", ["crossref"], limit_each=1, warnings=[])
+
+        self.assertEqual(calls["count"], 3)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].title, "Recovered Paper")
+
 
 if __name__ == "__main__":
     unittest.main()

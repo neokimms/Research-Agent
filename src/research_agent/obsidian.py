@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import uuid
 from pathlib import Path
 
 from .common_modules import configure_common_modules
@@ -89,7 +90,10 @@ class ObsidianWriter:
             candidate = parent / f"{stem}-{index}{suffix}"
             if not candidate.exists():
                 return candidate
-        raise RuntimeError(f"Could not find available filename for {path}")
+        while True:
+            candidate = parent / f"{stem}-{uuid.uuid4().hex[:12]}{suffix}"
+            if not candidate.exists():
+                return candidate
 
     def _ensure_connector(self) -> None:
         if self._connector is not None or not self._use_common_module:

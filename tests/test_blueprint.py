@@ -16,6 +16,9 @@ class BlueprintTests(unittest.TestCase):
         self.assertIn("# Agentic RAG Service Blueprint", markdown)
         for section in REQUIRED_BLUEPRINT_SECTIONS:
             self.assertIn(f"## {section}", markdown)
+        self.assertIn("## Synthesis Coverage", markdown)
+        self.assertIn("Stabilization default-filled sections requiring review", markdown)
+        self.assertIn("안정화 단계에서 기본값으로 채워 검토가 필요한 섹션", markdown)
 
     def test_stabilize_service_blueprint_preserves_frontmatter(self) -> None:
         markdown = stabilize_service_blueprint(
@@ -26,6 +29,12 @@ class BlueprintTests(unittest.TestCase):
         self.assertTrue(markdown.startswith("---\ntype: service-blueprint\n---"))
         self.assertIn("## Evidence", markdown)
         self.assertEqual(markdown.count("## Evidence"), 1)
+
+    def test_stabilize_service_blueprint_can_render_english_only_coverage(self) -> None:
+        markdown = stabilize_service_blueprint("A short answer.", topic="Agentic RAG", bilingual=False)
+
+        self.assertIn("## Synthesis Coverage", markdown)
+        self.assertNotIn("**한국어 번역**", markdown)
 
 
 if __name__ == "__main__":

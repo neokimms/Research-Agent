@@ -68,6 +68,20 @@ class ObsidianWriterTests(unittest.TestCase):
             self.assertEqual(second.name, "test-2.md")
             self.assertIn("# Typo status", first.read_text(encoding="utf-8"))
 
+    def test_available_variant_uses_uuid_after_numeric_range(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            writer = ObsidianWriter(ObsidianSettings(vault_path=Path(temp)))
+            path = Path(temp) / "note.md"
+            path.write_text("base", encoding="utf-8")
+            for index in range(2, 1000):
+                (Path(temp) / f"note-{index}.md").write_text("variant", encoding="utf-8")
+
+            with unittest.mock.patch("research_agent.obsidian.uuid.uuid4") as uuid4:
+                uuid4.return_value.hex = "abc123def4567890"
+                variant = writer._available_variant(path)
+
+            self.assertEqual(variant.name, "note-abc123def456.md")
+
 
 if __name__ == "__main__":
     unittest.main()

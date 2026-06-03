@@ -156,6 +156,8 @@ YYYY-MM-DD_topic-note-type.md
 
 `status: reviewed` 또는 `status: evergreen`인 노트는 덮어쓰지 않는다.
 
+`[quality_gates].block_vault_write_on_fail = true`로 설정하면 quality gate 실패 시 vault note 쓰기를 시작하지 않는다. 쓰기 도중 예외가 발생하면 `[pipeline].cleanup_partial_artifacts = true` 기본값에 따라 이번 run에서 생성된 partial artifact를 삭제한다.
+
 새로운 조사 결과는 다음 중 하나로 처리한다.
 
 - 기존 노트 하단에 append proposal 생성
