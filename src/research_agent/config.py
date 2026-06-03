@@ -238,7 +238,7 @@ def _dotenv_values(path: Path, *, common_module_path: Path | None) -> dict[str, 
         except Exception as exc:
             logger.warning(
                 "common dotenv parser failed; using built-in dotenv parser",
-                extra={"stage": "load_dotenv", "path": str(path), "error": str(exc)},
+                extra={"stage": "load_dotenv", "file_path": str(path), "error": str(exc)},
             )
 
     values: dict[str, str] = {}

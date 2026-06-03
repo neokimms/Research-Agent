@@ -47,6 +47,27 @@ class ObsidianWriterTests(unittest.TestCase):
 
             self.assertEqual(read_frontmatter_status(note), "reviewed: final")
 
+    def test_write_note_protects_unknown_status_values(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            writer = ObsidianWriter(ObsidianSettings(vault_path=Path(temp)))
+            writer.ensure_structure()
+            first = writer.write_note(
+                "30_Service-Blueprints",
+                "test.md",
+                "---\nstatus: reviwed\n---\n# Typo status\n",
+                allow_overwrite=True,
+            )
+            second = writer.write_note(
+                "30_Service-Blueprints",
+                "test.md",
+                "# Replacement",
+                allow_overwrite=True,
+            )
+
+            self.assertEqual(first.name, "test.md")
+            self.assertEqual(second.name, "test-2.md")
+            self.assertIn("# Typo status", first.read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()

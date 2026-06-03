@@ -103,5 +103,5 @@ def _section_has_content(markdown: str, heading: str) -> bool:
     return bool(content and content not in {"-", "- TBD"})
 
 
-def _traceable_url(source: SourceRecord) -> str:
-    return (source.url or source.canonical_url).strip()
+def _traceable_url(source: SourceRecord) -> bool:
+    return bool((source.url or source.canonical_url or "").strip())

@@ -10,6 +10,7 @@ from .textutil import slugify
 
 
 REVIEWED_STATUSES = {"reviewed", "evergreen"}
+KNOWN_STATUSES = REVIEWED_STATUSES | {"draft", "active", "archived"}
 logger = logging.getLogger(__name__)
 
 
@@ -61,7 +62,7 @@ class ObsidianWriter:
 
         if target.exists():
             status = read_frontmatter_status(target)
-            protected = status in REVIEWED_STATUSES and not self.settings.overwrite_reviewed_notes
+            protected = _status_requires_protection(target, status) and not self.settings.overwrite_reviewed_notes
             if protected or not allow_overwrite:
                 target = self._available_variant(target)
 
@@ -132,5 +133,20 @@ def read_frontmatter_status(path: Path) -> str | None:
     for line in frontmatter.splitlines():
         match = re.match(r"^\s*status\s*:\s*(.*)\s*$", line)
         if match:
-            return match.group(1).strip().strip('"').strip("'")
+            status = match.group(1).strip().strip('"').strip("'")
+            return status.lower() if status else None
     return None
+
+
+def _status_requires_protection(path: Path, status: str | None) -> bool:
+    if not status:
+        return False
+    if status in REVIEWED_STATUSES:
+        return True
+    if status not in KNOWN_STATUSES:
+        logger.warning(
+            "unknown frontmatter status; protecting existing note from overwrite",
+            extra={"stage": "obsidian_frontmatter", "file_path": str(path), "status": status},
+        )
+        return True
+    return False

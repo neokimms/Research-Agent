@@ -6,7 +6,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from research_agent.render import _translate_to_korean
+from research_agent.models import SourceRecord
+from research_agent.render import render_fallback_blueprint, render_source_note, _translate_to_korean
 
 
 class RenderTranslationTests(unittest.TestCase):
@@ -79,6 +80,27 @@ question
         self.assertNotIn("한국어 번역 검토 필요", _translate_to_korean(openai_claim))
         self.assertNotIn("open 출처", _translate_to_korean(langgraph_claim))
         self.assertIn("오픈소스 프레임워크", _translate_to_korean(langgraph_claim))
+
+    def test_source_note_handles_missing_url_for_seed_warning(self) -> None:
+        markdown = render_source_note(
+            SourceRecord("Official seed", "", "official-docs", canonical_url="https://docs.example.com/"),
+            topic="topic",
+            checked_at="2026-06-03",
+        )
+
+        self.assertIn("Official seed", markdown)
+
+    def test_fallback_blueprint_can_disable_bilingual_output(self) -> None:
+        markdown = render_fallback_blueprint(
+            "topic",
+            [SourceRecord("Official guide", "https://docs.example.com/guide", "official-docs")],
+            checked_at="2026-06-03",
+            bilingual=False,
+        )
+
+        self.assertIn("language: en", markdown)
+        self.assertNotIn("translation_language: ko", markdown)
+        self.assertNotIn("**한국어 번역**", markdown)
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ from research_agent.config import (
     ObsidianSettings,
     OpenAISettings,
     QualityGateSettings,
+    ReportSettings,
     Settings,
     SourceSettings,
 )
@@ -146,6 +147,30 @@ class PipelineTests(unittest.TestCase):
 
             self.assertEqual(len(run_writes), 1)
             self.assertFalse(run_writes[0][1])
+
+    def test_offline_fallback_blueprint_respects_non_bilingual_report_setting(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            settings = Settings(
+                app=AppSettings(),
+                obsidian=ObsidianSettings(vault_path=Path(temp)),
+                openai=OpenAISettings(),
+                sources=SourceSettings(
+                    official_doc_domains=["developers.openai.com"],
+                    standards_domains=[],
+                    paper_sources=[],
+                ),
+                quality_gates=QualityGateSettings(),
+                report=ReportSettings(bilingual=False),
+            )
+
+            artifacts = ResearchPipeline(settings).run("english only fallback", offline=True)
+
+            blueprint = Path(artifacts.service_blueprint).read_text(encoding="utf-8")
+            run_note = Path(artifacts.run_note).read_text(encoding="utf-8")
+            self.assertIn("language: en", blueprint)
+            self.assertNotIn("translation_language: ko", blueprint)
+            self.assertNotIn("**한국어 번역**", blueprint)
+            self.assertNotIn("## Bilingual Audit", run_note)
 
     def test_run_quality_gates_report_missing_source_urls(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

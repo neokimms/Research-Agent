@@ -172,7 +172,7 @@ def _source_verification_lines(source: SourceRecord, claims: list[EvidenceClaim]
     lines = ["- This source note is agent-generated and needs review."]
     if not source.url and not source.canonical_url:
         lines.append("- Source URL is missing.")
-    if source.source_type == "official-docs" and source.url.endswith("/"):
+    if source.source_type == "official-docs" and source.url and source.url.endswith("/"):
         lines.append("- This may be a seed domain rather than an exact documentation page.")
     if source.source_type == "papers" and not source.doi and not source.arxiv_id:
         lines.append("- Paper identity is missing DOI/arXiv metadata.")
@@ -181,7 +181,13 @@ def _source_verification_lines(source: SourceRecord, claims: list[EvidenceClaim]
     return "\n".join(lines)
 
 
-def render_fallback_blueprint(topic: str, sources: list[SourceRecord], *, checked_at: str) -> str:
+def render_fallback_blueprint(
+    topic: str,
+    sources: list[SourceRecord],
+    *,
+    checked_at: str,
+    bilingual: bool = True,
+) -> str:
     source_lines = "\n".join(
         f"- [{source.title}]({source.url or source.canonical_url}) ({source.source_type})"
         if source.url or source.canonical_url
@@ -201,28 +207,63 @@ source_priority:
   - standards
   - papers
 generated_by: research-agent
-language: bilingual
-original_language: en
-translation_language: ko
+{_language_frontmatter(bilingual)}
 ---
 
 # {topic} Service Blueprint
 
 ## One-Line Conclusion
 
-{_bilingual_block("Use an Obsidian-first workflow where the agent gathers evidence, writes source notes, creates an evidence ledger, and drafts a service blueprint for human review.")}
+{_localized_block("Use an Obsidian-first workflow where the agent gathers evidence, writes source notes, creates an evidence ledger, and drafts a service blueprint for human review.", bilingual=bilingual)}
 
 ## When To Use
 
-{_bilingual_block("- When source freshness and traceability matter.\n- When official documentation, standards, and papers should outrank general web summaries.\n- When the final artifact must remain readable and editable in Obsidian.")}
+{_localized_block("- When source freshness and traceability matter.\n- When official documentation, standards, and papers should outrank general web summaries.\n- When the final artifact must remain readable and editable in Obsidian.", bilingual=bilingual)}
 
 ## Structure Classification
 
-{_bilingual_block("- Source-first research workflow\n- Evidence-led synthesis\n- Human-reviewed knowledge base")}
+{_localized_block("- Source-first research workflow\n- Evidence-led synthesis\n- Human-reviewed knowledge base", bilingual=bilingual)}
 
 ## Recommended Baseline
 
-**원본**
+{_fallback_baseline_block(bilingual=bilingual)}
+
+## Implementation Order
+
+{_localized_block("1. Configure the Obsidian vault path.\n2. Collect official docs, standards, and paper metadata.\n3. Generate source notes and an evidence ledger.\n4. Use OpenAI synthesis only after local evidence is assembled.\n5. Review and promote draft notes inside Obsidian.", bilingual=bilingual)}
+
+## Operational Risks
+
+{_localized_block("- Stale documentation\n- Weak source metadata\n- Overwriting reviewed notes\n- Treating generated synthesis as verified fact", bilingual=bilingual)}
+
+## Verification
+
+{_localized_block("- Check that every claim has a source URL.\n- Check publication and update dates.\n- Keep uncertain claims in the uncertainty section.", bilingual=bilingual)}
+
+## Evidence
+
+{source_lines}
+
+## Still Uncertain
+
+{_localized_block("- Exact source pages and paper metadata need human review.", bilingual=bilingual)}
+
+## Related Notes
+"""
+
+
+def _fallback_baseline_block(*, bilingual: bool) -> str:
+    original = """```text
+question
+-> source collection
+-> evidence ledger
+-> structure classification
+-> service blueprint draft
+-> Obsidian review
+```"""
+    if not bilingual:
+        return original
+    return """**원본**
 
 ```text
 question
@@ -242,30 +283,19 @@ question
 -> 구조 분류
 -> 실서비스 기본형 초안
 -> Obsidian 검토
-```
+```"""
 
-## Implementation Order
 
-{_bilingual_block("1. Configure the Obsidian vault path.\n2. Collect official docs, standards, and paper metadata.\n3. Generate source notes and an evidence ledger.\n4. Use OpenAI synthesis only after local evidence is assembled.\n5. Review and promote draft notes inside Obsidian.")}
+def _language_frontmatter(bilingual: bool) -> str:
+    if bilingual:
+        return "language: bilingual\noriginal_language: en\ntranslation_language: ko"
+    return "language: en"
 
-## Operational Risks
 
-{_bilingual_block("- Stale documentation\n- Weak source metadata\n- Overwriting reviewed notes\n- Treating generated synthesis as verified fact")}
-
-## Verification
-
-{_bilingual_block("- Check that every claim has a source URL.\n- Check publication and update dates.\n- Keep uncertain claims in the uncertainty section.")}
-
-## Evidence
-
-{source_lines}
-
-## Still Uncertain
-
-{_bilingual_block("- Exact source pages and paper metadata need human review.")}
-
-## Related Notes
-"""
+def _localized_block(text: str, *, bilingual: bool) -> str:
+    if bilingual:
+        return _bilingual_block(text)
+    return text.strip() or "No content."
 
 
 def render_run_note(

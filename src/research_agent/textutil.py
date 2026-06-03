@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 
 
@@ -19,5 +20,4 @@ def yaml_scalar(value: str | int | float | bool | None) -> str:
         return str(value)
     if isinstance(value, float):
         return f"{value:.2f}"
-    escaped = str(value).replace('"', '\\"')
-    return f'"{escaped}"'
+    return json.dumps(str(value), ensure_ascii=False)

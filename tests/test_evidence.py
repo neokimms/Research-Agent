@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from research_agent.evidence import extract_evidence, fallback_evidence, parse_evidence_output
+from research_agent.evidence import _claim_from_mapping, extract_evidence, fallback_evidence, parse_evidence_output
 from research_agent.models import EvidenceClaim, SourceRecord
 
 
@@ -107,6 +107,24 @@ class EvidenceTests(unittest.TestCase):
                 confidence="certain",
                 category="test",
             )
+
+    def test_claim_mapping_handles_model_validation_errors(self) -> None:
+        item = {
+            "claim_id": "E001",
+            "source_id": "S001",
+            "claim": "Claim",
+            "evidence": "Evidence",
+            "source_title": "Source",
+            "source_url": "https://example.com",
+            "source_type": "official-docs",
+            "confidence": "high",
+            "category": "test",
+        }
+
+        with patch("research_agent.evidence.EvidenceClaim", side_effect=ValueError("invalid claim")):
+            claim = _claim_from_mapping(item, source_by_id={}, fallback_index=1)
+
+        self.assertIsNone(claim)
 
     def test_extract_evidence_uses_structured_outputs_schema(self) -> None:
         calls = {}

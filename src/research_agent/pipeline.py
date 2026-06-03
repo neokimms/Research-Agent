@@ -343,11 +343,11 @@ class ResearchPipeline:
         offline: bool,
     ) -> str:
         if offline:
-            return render_fallback_blueprint(topic, sources, checked_at=checked_at)
+            return render_fallback_blueprint(topic, sources, checked_at=checked_at, bilingual=self.settings.report.bilingual)
 
         provider = select_llm_provider(self.settings)
         if not provider.available:
-            return render_fallback_blueprint(topic, sources, checked_at=checked_at)
+            return render_fallback_blueprint(topic, sources, checked_at=checked_at, bilingual=self.settings.report.bilingual)
 
         if provider.provider == "gemini":
             return self._synthesize_blueprint_with_gemini(topic, evidence_markdown, sources, checked_at, provider)
@@ -380,12 +380,12 @@ class ResearchPipeline:
                 "service blueprint synthesis failed; using fallback blueprint",
                 extra={"stage": "synthesize_blueprint", "provider": "openai", "topic": topic, "error": str(exc)},
             )
-            return render_fallback_blueprint(topic, sources, checked_at=checked_at)
+            return render_fallback_blueprint(topic, sources, checked_at=checked_at, bilingual=self.settings.report.bilingual)
         logger.warning(
             "service blueprint synthesis returned empty markdown; using fallback blueprint",
             extra={"stage": "synthesize_blueprint", "provider": "openai", "topic": topic},
         )
-        return render_fallback_blueprint(topic, sources, checked_at=checked_at)
+        return render_fallback_blueprint(topic, sources, checked_at=checked_at, bilingual=self.settings.report.bilingual)
 
     def _synthesize_blueprint_with_gemini(
         self,
@@ -414,12 +414,12 @@ class ResearchPipeline:
                 "service blueprint synthesis failed; using fallback blueprint",
                 extra={"stage": "synthesize_blueprint", "provider": "gemini", "topic": topic, "error": str(exc)},
             )
-            return render_fallback_blueprint(topic, sources, checked_at=checked_at)
+            return render_fallback_blueprint(topic, sources, checked_at=checked_at, bilingual=self.settings.report.bilingual)
         logger.warning(
             "service blueprint synthesis returned empty markdown; using fallback blueprint",
             extra={"stage": "synthesize_blueprint", "provider": "gemini", "topic": topic},
         )
-        return render_fallback_blueprint(topic, sources, checked_at=checked_at)
+        return render_fallback_blueprint(topic, sources, checked_at=checked_at, bilingual=self.settings.report.bilingual)
 
     def _model_for(self, provider: ProviderSelection, role: str) -> str:
         if provider.provider == "gemini":

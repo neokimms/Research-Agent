@@ -343,17 +343,24 @@ def _claim_from_mapping(
     if confidence not in {"low", "medium", "high"}:
         confidence = "medium"
 
-    return EvidenceClaim(
-        claim_id=str(item.get("claim_id") or f"E{fallback_index:03d}").strip(),
-        source_id=source_id or f"S{fallback_index:03d}",
-        claim=claim_text,
-        evidence=str(item.get("evidence") or "").strip(),
-        source_title=str(item.get("source_title") or (source.title if source else "")).strip(),
-        source_url=str(item.get("source_url") or ((source.url or source.canonical_url) if source else "")).strip(),
-        source_type=str(item.get("source_type") or (source.source_type if source else "")).strip(),
-        confidence=confidence,
-        category=str(item.get("category") or "general").strip(),
-    )
+    try:
+        return EvidenceClaim(
+            claim_id=str(item.get("claim_id") or f"E{fallback_index:03d}").strip(),
+            source_id=source_id or f"S{fallback_index:03d}",
+            claim=claim_text,
+            evidence=str(item.get("evidence") or "").strip(),
+            source_title=str(item.get("source_title") or (source.title if source else "")).strip(),
+            source_url=str(item.get("source_url") or ((source.url or source.canonical_url) if source else "")).strip(),
+            source_type=str(item.get("source_type") or (source.source_type if source else "")).strip(),
+            confidence=confidence,
+            category=str(item.get("category") or "general").strip(),
+        )
+    except ValueError as exc:
+        logger.warning(
+            "evidence claim failed model validation",
+            extra={"stage": "parse_evidence", "claim_id": item.get("claim_id"), "error": str(exc)},
+        )
+        return None
 
 
 def _string_list(value: Any) -> list[str]:
