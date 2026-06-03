@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import os
+import logging
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from .common_modules import configure_common_modules
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -97,6 +101,11 @@ class QualityGateSettings:
 
 
 @dataclass(frozen=True)
+class ReportSettings:
+    bilingual: bool = True
+
+
+@dataclass(frozen=True)
 class Settings:
     app: AppSettings
     obsidian: ObsidianSettings
@@ -106,6 +115,7 @@ class Settings:
     llm: LLMSettings = field(default_factory=LLMSettings)
     gemini: GeminiSettings = field(default_factory=GeminiSettings)
     common: CommonModuleSettings = field(default_factory=CommonModuleSettings)
+    report: ReportSettings = field(default_factory=ReportSettings)
 
 
 def load_dotenv(path: Path, *, override: bool = False, common_module_path: Path | None = None) -> None:
@@ -131,6 +141,7 @@ def load_settings(path: Path, *, vault_override: Path | None = None, provider_ov
     gemini_model_data = gemini_data.get("models", {})
     source_data = data.get("sources", {})
     gate_data = data.get("quality_gates", {})
+    report_data = data.get("report", data.get("reports", {}))
 
     vault_path = vault_override or Path(obsidian_data.get("vault_path", "Research"))
     common = CommonModuleSettings(
@@ -197,6 +208,9 @@ def load_settings(path: Path, *, vault_override: Path | None = None, provider_ov
             require_uncertainty_section=bool(gate_data.get("require_uncertainty_section", True)),
         ),
         common=common,
+        report=ReportSettings(
+            bilingual=bool(report_data.get("bilingual", True)),
+        ),
     )
 
 
@@ -221,8 +235,11 @@ def _dotenv_values(path: Path, *, common_module_path: Path | None) -> dict[str, 
             from llm_key_manager.config import parse_dotenv
 
             return parse_dotenv(path)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "common dotenv parser failed; using built-in dotenv parser",
+                extra={"stage": "load_dotenv", "path": str(path), "error": str(exc)},
+            )
 
     values: dict[str, str] = {}
     for raw_line in path.read_text(encoding="utf-8").splitlines():

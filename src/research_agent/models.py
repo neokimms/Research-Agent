@@ -32,6 +32,10 @@ class EvidenceClaim:
     confidence: str
     category: str
 
+    def __post_init__(self) -> None:
+        if self.confidence not in {"low", "medium", "high"}:
+            raise ValueError("EvidenceClaim.confidence must be one of: low, medium, high")
+
 
 @dataclass(frozen=True)
 class EvidenceBundle:

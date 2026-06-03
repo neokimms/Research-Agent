@@ -513,7 +513,7 @@ PYTHONPATH=src python3 -m research_agent --vault /path/to/ObsidianVault vault-he
 
 `run`은 생성된 source, evidence, service blueprint를 기준으로 quality gate를 평가하고, 결과를 evidence ledger와 run-log의 `## Quality Gates` 섹션에 남깁니다.
 
-또한 run이 끝나면 이번 run에서 생성된 산출물 묶음만 대상으로 bilingual audit을 실행하고, run-log의 `## Bilingual Audit` 섹션에 요약을 남깁니다.
+또한 run이 끝나면 이번 run에서 생성된 source note, evidence ledger, service blueprint, topic map을 대상으로 bilingual audit을 실행하고, run-log의 `## Bilingual Audit` 섹션에 요약을 남깁니다. run-log는 감사 요약을 포함해 한 번만 저장됩니다.
 
 현재 gate:
 
@@ -548,6 +548,13 @@ Original text
 ```
 
 오프라인 fallback은 내장 번역 사전을 사용하고, 모델 기반 service blueprint 생성 시에는 프롬프트에서 같은 병기 형식을 요구합니다.
+
+서비스 blueprint synthesis 프롬프트의 한글 병기 강제는 설정 파일에서 조정할 수 있습니다. 기본값은 `true`입니다.
+
+```toml
+[report]
+bilingual = true
+```
 
 기존 generated report note에 같은 형식을 붙이려면 먼저 읽기 전용 preview를 실행합니다.
 

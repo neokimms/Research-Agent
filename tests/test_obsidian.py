@@ -8,7 +8,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from research_agent.config import ObsidianSettings
-from research_agent.obsidian import ObsidianWriter, sanitize_filename
+from research_agent.obsidian import ObsidianWriter, read_frontmatter_status, sanitize_filename
 
 
 class ObsidianWriterTests(unittest.TestCase):
@@ -36,6 +36,16 @@ class ObsidianWriterTests(unittest.TestCase):
             writer = ObsidianWriter(ObsidianSettings(vault_path=Path(temp)))
             with self.assertRaises(ValueError):
                 writer.safe_path("../escape")
+
+    def test_read_frontmatter_status_handles_colon_in_value(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            note = Path(temp) / "note.md"
+            note.write_text(
+                '---\nstatus : "reviewed: final"\n---\n# Note\n',
+                encoding="utf-8",
+            )
+
+            self.assertEqual(read_frontmatter_status(note), "reviewed: final")
 
 
 if __name__ == "__main__":

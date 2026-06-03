@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import json
+import logging
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
+
+from .retry import RetryConfig, retry_call
+
+
+logger = logging.getLogger(__name__)
 
 
 class GeminiError(RuntimeError):
@@ -18,6 +24,8 @@ class GeminiGenerateClient:
     default_model: str
     base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     timeout_seconds: int = 120
+    max_retries: int = 3
+    retry_initial_delay_seconds: float = 0.5
 
     def generate(
         self,
@@ -52,6 +60,24 @@ class GeminiGenerateClient:
             }
 
         body = json.dumps(payload).encode("utf-8")
+
+        try:
+            return retry_call(
+                lambda: self._post(selected_model, body),
+                label="gemini generate request",
+                logger=logger,
+                config=RetryConfig(
+                    attempts=self.max_retries,
+                    initial_delay_seconds=self.retry_initial_delay_seconds,
+                ),
+            )
+        except urllib.error.HTTPError as exc:
+            details = exc.read().decode("utf-8", errors="replace")
+            raise GeminiError(f"Gemini API error {exc.code}: {details}") from exc
+        except urllib.error.URLError as exc:
+            raise GeminiError(f"Gemini API request failed: {exc.reason}") from exc
+
+    def _post(self, selected_model: str, body: bytes) -> dict[str, Any]:
         request = urllib.request.Request(
             f"{self.base_url.rstrip('/')}/models/{selected_model}:generateContent",
             data=body,
@@ -61,15 +87,8 @@ class GeminiGenerateClient:
             },
             method="POST",
         )
-
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
-                return json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            details = exc.read().decode("utf-8", errors="replace")
-            raise GeminiError(f"Gemini API error {exc.code}: {details}") from exc
-        except urllib.error.URLError as exc:
-            raise GeminiError(f"Gemini API request failed: {exc.reason}") from exc
+        with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+            return json.loads(response.read().decode("utf-8"))
 
 
 def gemini_output_text(response: dict[str, Any]) -> str:

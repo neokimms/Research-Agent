@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 
 from .common_modules import configure_common_modules
 from .config import Settings
 
+
+logger = logging.getLogger(__name__)
 
 PLACEHOLDER_VALUES = {
     "",
@@ -37,8 +40,11 @@ def resolve_openai_api_key(settings: Settings) -> str | None:
                 manager.register_provider(ProviderSpec(provider_name, settings.openai.api_key_env))
                 config = manager.get(provider_name, required=False)
             return config.api_key if config else None
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "common LLM key manager failed; falling back to environment",
+                extra={"stage": "resolve_secret", "provider": "openai", "env_name": settings.openai.api_key_env, "error": str(exc)},
+            )
 
     value = os.environ.get(settings.openai.api_key_env, "").strip()
     if not _is_usable_secret(value):
@@ -102,8 +108,11 @@ def _resolve_key_from_common_module_or_env(settings: Settings, *, provider: str,
                 manager.register_provider(ProviderSpec(provider_name, env_name))
                 config = manager.get(provider_name, required=False)
             return config.api_key if config else None
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "common LLM key manager failed; falling back to environment",
+                extra={"stage": "resolve_secret", "provider": provider, "env_name": env_name, "error": str(exc)},
+            )
 
     value = os.environ.get(env_name, "").strip()
     if not _is_usable_secret(value):

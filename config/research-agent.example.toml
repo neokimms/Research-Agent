@@ -9,6 +9,9 @@ provider = "auto"
 enabled = true
 module_path = "../Common Module/src"
 
+[report]
+bilingual = true
+
 [obsidian]
 vault_path = "/absolute/path/to/Research"
 draft_dir = "00_Inbox"

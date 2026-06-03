@@ -28,6 +28,9 @@ synthesis = "gpt-5.5"
 
 [gemini.models]
 synthesis = "gemini-2.5-flash"
+
+[report]
+bilingual = false
 """,
                 encoding="utf-8",
             )
@@ -36,6 +39,7 @@ synthesis = "gemini-2.5-flash"
             self.assertEqual(settings.openai.models.synthesis, "gpt-5.5")
             self.assertEqual(settings.llm.provider, "auto")
             self.assertEqual(settings.gemini.models.synthesis, "gemini-2.5-flash")
+            self.assertFalse(settings.report.bilingual)
 
 
 if __name__ == "__main__":

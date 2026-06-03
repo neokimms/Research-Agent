@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from .bilingual_audit import render_bilingual_audit_run_summary, run_bilingual_audit
@@ -12,12 +13,15 @@ from .gemini_client import GeminiError, GeminiGenerateClient, gemini_output_text
 from .models import DryRunPlan, PlannedArtifact, RunArtifacts, RunWarning, SafetyCheck, SourceRecord
 from .obsidian import ObsidianWriter
 from .openai_client import OpenAIError, OpenAIResponsesClient, output_text
-from .prompts import SYNTHESIS_INSTRUCTIONS, synthesis_prompt
+from .prompts import synthesis_instructions, synthesis_prompt
 from .quality import evaluate_quality_gates
 from .render import render_evidence_ledger, render_fallback_blueprint, render_run_note, render_source_note, render_topic_map
 from .secrets import ProviderSelection, select_llm_provider
 from .textutil import slugify
 from .timeutil import now_local
+
+
+logger = logging.getLogger(__name__)
 
 
 class ResearchPipeline:
@@ -129,8 +133,16 @@ class ResearchPipeline:
             ),
         )
 
-        artifact_strings = [str(path) for path in [*source_paths, evidence_path, blueprint_path, topic_map_path]]
+        artifact_paths = [*source_paths, evidence_path, blueprint_path, topic_map_path]
+        artifact_strings = [str(path) for path in artifact_paths]
         run_filename = f"{date_prefix}_{slug}_run.md"
+        bilingual_audit_summary = None
+        if self.settings.report.bilingual:
+            audit = run_bilingual_audit(
+                self.writer.vault_path,
+                target_paths=artifact_paths,
+            )
+            bilingual_audit_summary = render_bilingual_audit_run_summary(audit)
         run_markdown = render_run_note(
             topic,
             artifact_strings,
@@ -138,28 +150,10 @@ class ResearchPipeline:
             mode="offline" if offline else provider.provider,
             quality_gates=quality_gates,
             warnings=warnings,
+            bilingual_audit=bilingual_audit_summary,
             rerun_of=rerun_of,
         )
         run_path = self.writer.write_note(self.settings.obsidian.run_dir, run_filename, run_markdown)
-        audit = run_bilingual_audit(
-            self.writer.vault_path,
-            target_paths=[*source_paths, evidence_path, blueprint_path, topic_map_path, run_path],
-        )
-        run_path = self.writer.write_note(
-            self.settings.obsidian.run_dir,
-            run_path.name,
-            render_run_note(
-                topic,
-                artifact_strings,
-                checked_at=checked_at,
-                mode="offline" if offline else provider.provider,
-                quality_gates=quality_gates,
-                warnings=warnings,
-                bilingual_audit=render_bilingual_audit_run_summary(audit),
-                rerun_of=rerun_of,
-            ),
-            allow_overwrite=True,
-        )
 
         return RunArtifacts(
             run_note=str(run_path),
@@ -373,16 +367,24 @@ class ResearchPipeline:
         )
         try:
             response = client.create(
-                input_text=synthesis_prompt(topic, evidence_markdown),
-                instructions=SYNTHESIS_INSTRUCTIONS,
+                input_text=synthesis_prompt(topic, evidence_markdown, bilingual=self.settings.report.bilingual),
+                instructions=synthesis_instructions(bilingual=self.settings.report.bilingual),
                 reasoning_effort="medium",
             )
             markdown = output_text(response)
             if markdown.strip():
                 stable_markdown = stabilize_service_blueprint(markdown, topic=topic)
                 return self._with_frontmatter(topic, stable_markdown, checked_at=checked_at)
-        except OpenAIError:
+        except OpenAIError as exc:
+            logger.warning(
+                "service blueprint synthesis failed; using fallback blueprint",
+                extra={"stage": "synthesize_blueprint", "provider": "openai", "topic": topic, "error": str(exc)},
+            )
             return render_fallback_blueprint(topic, sources, checked_at=checked_at)
+        logger.warning(
+            "service blueprint synthesis returned empty markdown; using fallback blueprint",
+            extra={"stage": "synthesize_blueprint", "provider": "openai", "topic": topic},
+        )
         return render_fallback_blueprint(topic, sources, checked_at=checked_at)
 
     def _synthesize_blueprint_with_gemini(
@@ -399,16 +401,24 @@ class ResearchPipeline:
         )
         try:
             response = client.generate(
-                input_text=synthesis_prompt(topic, evidence_markdown),
-                instructions=SYNTHESIS_INSTRUCTIONS,
+                input_text=synthesis_prompt(topic, evidence_markdown, bilingual=self.settings.report.bilingual),
+                instructions=synthesis_instructions(bilingual=self.settings.report.bilingual),
                 model=self.settings.gemini.models.synthesis,
             )
             markdown = gemini_output_text(response)
             if markdown.strip():
                 stable_markdown = stabilize_service_blueprint(markdown, topic=topic)
                 return self._with_frontmatter(topic, stable_markdown, checked_at=checked_at)
-        except GeminiError:
+        except GeminiError as exc:
+            logger.warning(
+                "service blueprint synthesis failed; using fallback blueprint",
+                extra={"stage": "synthesize_blueprint", "provider": "gemini", "topic": topic, "error": str(exc)},
+            )
             return render_fallback_blueprint(topic, sources, checked_at=checked_at)
+        logger.warning(
+            "service blueprint synthesis returned empty markdown; using fallback blueprint",
+            extra={"stage": "synthesize_blueprint", "provider": "gemini", "topic": topic},
+        )
         return render_fallback_blueprint(topic, sources, checked_at=checked_at)
 
     def _model_for(self, provider: ProviderSelection, role: str) -> str:
@@ -432,9 +442,7 @@ source_priority:
   - standards
   - papers
 generated_by: research-agent
-language: bilingual
-original_language: en
-translation_language: ko
+{self._language_frontmatter()}
 ---
 
 {body}
@@ -449,3 +457,8 @@ translation_language: ko
         if source.source_type == "papers":
             return f"{source_dir}/papers"
         return f"{source_dir}/web"
+
+    def _language_frontmatter(self) -> str:
+        if self.settings.report.bilingual:
+            return "language: bilingual\noriginal_language: en\ntranslation_language: ko"
+        return "language: en"

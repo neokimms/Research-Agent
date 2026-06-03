@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
+
+from .retry import RetryConfig, retry_call
+
+
+logger = logging.getLogger(__name__)
 
 
 class OpenAIError(RuntimeError):
@@ -17,6 +23,8 @@ class OpenAIResponsesClient:
     default_model: str
     base_url: str = "https://api.openai.com/v1"
     timeout_seconds: int = 120
+    max_retries: int = 3
+    retry_initial_delay_seconds: float = 0.5
 
     def create(
         self,
@@ -44,6 +52,24 @@ class OpenAIResponsesClient:
             payload["reasoning"] = {"effort": reasoning_effort}
 
         body = json.dumps(payload).encode("utf-8")
+
+        try:
+            return retry_call(
+                lambda: self._post(body),
+                label="openai responses request",
+                logger=logger,
+                config=RetryConfig(
+                    attempts=self.max_retries,
+                    initial_delay_seconds=self.retry_initial_delay_seconds,
+                ),
+            )
+        except urllib.error.HTTPError as exc:
+            details = exc.read().decode("utf-8", errors="replace")
+            raise OpenAIError(f"OpenAI API error {exc.code}: {details}") from exc
+        except urllib.error.URLError as exc:
+            raise OpenAIError(f"OpenAI API request failed: {exc.reason}") from exc
+
+    def _post(self, body: bytes) -> dict[str, Any]:
         request = urllib.request.Request(
             f"{self.base_url.rstrip('/')}/responses",
             data=body,
@@ -53,15 +79,8 @@ class OpenAIResponsesClient:
             },
             method="POST",
         )
-
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
-                return json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            details = exc.read().decode("utf-8", errors="replace")
-            raise OpenAIError(f"OpenAI API error {exc.code}: {details}") from exc
-        except urllib.error.URLError as exc:
-            raise OpenAIError(f"OpenAI API request failed: {exc.reason}") from exc
+        with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+            return json.loads(response.read().decode("utf-8"))
 
 
 def output_text(response: dict[str, Any]) -> str:

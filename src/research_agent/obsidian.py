@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from .textutil import slugify
 
 
 REVIEWED_STATUSES = {"reviewed", "evergreen"}
+logger = logging.getLogger(__name__)
 
 
 class ObsidianWriter:
@@ -101,7 +103,11 @@ class ObsidianWriter:
             self._connector = ObsidianConnector(
                 ObsidianConfig(vault_path=self.vault_path, default_folder=None)
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "common Obsidian connector unavailable; using filesystem writer",
+                extra={"stage": "obsidian_connector", "vault_path": str(self.vault_path), "error": str(exc)},
+            )
             self._connector = None
 
 
@@ -124,6 +130,7 @@ def read_frontmatter_status(path: Path) -> str | None:
         return None
     frontmatter = text[4:end]
     for line in frontmatter.splitlines():
-        if line.strip().startswith("status:"):
-            return line.split(":", 1)[1].strip().strip('"').strip("'")
+        match = re.match(r"^\s*status\s*:\s*(.*)\s*$", line)
+        if match:
+            return match.group(1).strip().strip('"').strip("'")
     return None

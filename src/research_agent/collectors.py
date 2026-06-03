@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import urllib.parse
 import urllib.request
@@ -12,10 +13,12 @@ from .config import SourceSettings
 from .gemini_client import GeminiError, GeminiGenerateClient, gemini_output_text
 from .models import RunWarning, SourceRecord
 from .openai_client import OpenAIError, OpenAIResponsesClient, output_text
+from .retry import RetryConfig, retry_call
 
 
 USER_AGENT = "obsidian-research-agent/0.1"
 DEFAULT_OFFICIAL_DOC_LIMIT = 6
+logger = logging.getLogger(__name__)
 
 
 def seed_official_sources(topic: str, source_settings: SourceSettings, *, limit: int = 4) -> list[SourceRecord]:
@@ -103,7 +106,11 @@ def _collect_official_docs_with_openai(
             ],
             tool_choice="required",
         )
-    except OpenAIError:
+    except OpenAIError as exc:
+        logger.warning(
+            "official docs collection failed; using seed sources",
+            extra={"stage": "collect_official_docs", "provider": "openai", "topic": topic, "error": str(exc)},
+        )
         return seed_official_sources(topic, source_settings)
 
     records = _records_from_official_response(
@@ -115,6 +122,10 @@ def _collect_official_docs_with_openai(
     )
     if records:
         return records
+    logger.warning(
+        "official docs collection returned no usable URLs; using seed sources",
+        extra={"stage": "collect_official_docs", "provider": "openai", "topic": topic},
+    )
     return seed_official_sources(topic, source_settings)
 
 
@@ -148,7 +159,11 @@ def _collect_standards_with_openai(
             ],
             tool_choice="required",
         )
-    except OpenAIError:
+    except OpenAIError as exc:
+        logger.warning(
+            "standards collection failed; using seed sources",
+            extra={"stage": "collect_standards", "provider": "openai", "topic": topic, "error": str(exc)},
+        )
         return seed_standard_sources(topic, source_settings, limit=limit)
 
     records = _records_from_official_response(
@@ -161,6 +176,10 @@ def _collect_standards_with_openai(
     )
     if records:
         return records
+    logger.warning(
+        "standards collection returned no usable URLs; using seed sources",
+        extra={"stage": "collect_standards", "provider": "openai", "topic": topic},
+    )
     return seed_standard_sources(topic, source_settings, limit=limit)
 
 
@@ -186,7 +205,11 @@ def _collect_official_docs_with_gemini(
             model=model,
             tools=[{"google_search": {}}],
         )
-    except GeminiError:
+    except GeminiError as exc:
+        logger.warning(
+            "official docs collection failed; using seed sources",
+            extra={"stage": "collect_official_docs", "provider": "gemini", "topic": topic, "error": str(exc)},
+        )
         return seed_official_sources(topic, source_settings)
 
     records = _records_from_official_response(
@@ -198,6 +221,10 @@ def _collect_official_docs_with_gemini(
     )
     if records:
         return records
+    logger.warning(
+        "official docs collection returned no usable URLs; using seed sources",
+        extra={"stage": "collect_official_docs", "provider": "gemini", "topic": topic},
+    )
     return seed_official_sources(topic, source_settings)
 
 
@@ -223,7 +250,11 @@ def _collect_standards_with_gemini(
             model=model,
             tools=[{"google_search": {}}],
         )
-    except GeminiError:
+    except GeminiError as exc:
+        logger.warning(
+            "standards collection failed; using seed sources",
+            extra={"stage": "collect_standards", "provider": "gemini", "topic": topic, "error": str(exc)},
+        )
         return seed_standard_sources(topic, source_settings, limit=limit)
 
     records = _records_from_official_response(
@@ -236,6 +267,10 @@ def _collect_standards_with_gemini(
     )
     if records:
         return records
+    logger.warning(
+        "standards collection returned no usable URLs; using seed sources",
+        extra={"stage": "collect_standards", "provider": "gemini", "topic": topic},
+    )
     return seed_standard_sources(topic, source_settings, limit=limit)
 
 
@@ -389,6 +424,12 @@ def _record_from_mapping(item: dict, *, allowed_domains: list[str], source_provi
 
 def _url_in_allowed_domains(url: str, allowed_domains: list[str]) -> bool:
     parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return False
+    try:
+        parsed.port
+    except ValueError:
+        return False
     netloc = parsed.netloc.lower()
     if netloc.startswith("www."):
         netloc = netloc[4:]
@@ -568,8 +609,22 @@ def collect_paper_sources(
             elif source == "openalex":
                 records.extend(search_openalex(topic, limit=limit_each))
             else:
+                logger.warning(
+                    "unknown paper source configured",
+                    extra={"stage": "collect_papers", "source": source, "topic": topic},
+                )
                 _append_warning(warnings, source=source, detail="unknown paper source configured")
         except Exception as exc:
+            logger.warning(
+                "paper collector failed",
+                extra={
+                    "stage": "collect_papers",
+                    "source": source,
+                    "topic": topic,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                },
+            )
             _append_warning(warnings, source=source, detail=f"{type(exc).__name__}: {exc}")
     return deduplicate_sources(records)
 
@@ -596,9 +651,17 @@ def deduplicate_sources(records: list[SourceRecord]) -> list[SourceRecord]:
 
 
 def _get_text(url: str, *, timeout_seconds: int) -> str:
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-        return response.read().decode("utf-8", errors="replace")
+    def fetch() -> str:
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            return response.read().decode("utf-8", errors="replace")
+
+    return retry_call(
+        fetch,
+        label="source metadata request",
+        logger=logger,
+        config=RetryConfig(attempts=3, initial_delay_seconds=0.5),
+    )
 
 
 def _xml_text(element: ET.Element | None) -> str:

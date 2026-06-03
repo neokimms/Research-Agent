@@ -119,6 +119,34 @@ class PipelineTests(unittest.TestCase):
                 self.assertIn("- Re-run of portal job `failed-source`.", markdown)
                 self.assertIn("- 포털 작업 `failed-source`의 재실행입니다.", markdown)
 
+    def test_run_note_is_written_once_after_bilingual_audit(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            settings = Settings(
+                app=AppSettings(),
+                obsidian=ObsidianSettings(vault_path=Path(temp)),
+                openai=OpenAISettings(),
+                sources=SourceSettings(
+                    official_doc_domains=["developers.openai.com"],
+                    standards_domains=[],
+                    paper_sources=[],
+                ),
+                quality_gates=QualityGateSettings(),
+            )
+            pipeline = ResearchPipeline(settings)
+            original_write_note = pipeline.writer.write_note
+            run_writes = []
+
+            def tracking_write_note(directory, filename, markdown, *, allow_overwrite=False):
+                if directory == settings.obsidian.run_dir:
+                    run_writes.append((filename, allow_overwrite))
+                return original_write_note(directory, filename, markdown, allow_overwrite=allow_overwrite)
+
+            with patch.object(pipeline.writer, "write_note", side_effect=tracking_write_note):
+                pipeline.run("agentic RAG single write", offline=True)
+
+            self.assertEqual(len(run_writes), 1)
+            self.assertFalse(run_writes[0][1])
+
     def test_run_quality_gates_report_missing_source_urls(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             settings = Settings(

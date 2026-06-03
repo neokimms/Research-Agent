@@ -8,7 +8,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from research_agent.evidence import extract_evidence, fallback_evidence, parse_evidence_output
-from research_agent.models import SourceRecord
+from research_agent.models import EvidenceClaim, SourceRecord
 
 
 class EvidenceTests(unittest.TestCase):
@@ -64,6 +64,49 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(bundle.claims[0].claim_id, "E101")
         self.assertEqual(bundle.claims[0].confidence, "high")
         self.assertEqual(bundle.needs_verification, ["Check latest page update date."])
+
+    def test_parse_evidence_output_rejects_invalid_schema(self) -> None:
+        bundle = parse_evidence_output(
+            """
+{
+  "claims": [
+    {
+      "claim_id": "E101",
+      "source_id": "S001",
+      "claim": "Missing fields should fail.",
+      "confidence": "certain"
+    }
+  ],
+  "conflicts": [],
+  "needs_verification": []
+}
+""",
+            sources=[
+                SourceRecord(
+                    title="LangGraph Overview",
+                    url="https://docs.langchain.com/oss/python/langgraph/overview",
+                    source_type="official-docs",
+                )
+            ],
+        )
+
+        self.assertEqual(bundle.extraction_mode, "schema-invalid")
+        self.assertEqual(bundle.claims, [])
+        self.assertTrue(any("invalid confidence" in item for item in bundle.needs_verification))
+
+    def test_evidence_claim_validates_confidence(self) -> None:
+        with self.assertRaises(ValueError):
+            EvidenceClaim(
+                claim_id="E001",
+                source_id="S001",
+                claim="Claim",
+                evidence="Evidence",
+                source_title="Source",
+                source_url="https://example.com",
+                source_type="official-docs",
+                confidence="certain",
+                category="test",
+            )
 
     def test_extract_evidence_uses_structured_outputs_schema(self) -> None:
         calls = {}

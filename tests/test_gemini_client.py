@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import io
 import json
 import sys
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
@@ -60,6 +62,37 @@ class GeminiClientTests(unittest.TestCase):
             captured["body"]["generationConfig"]["responseFormat"]["text"]["mimeType"],
             "application/json",
         )
+        self.assertEqual(gemini_output_text(response), "OK")
+
+    def test_generate_retries_transient_http_errors(self) -> None:
+        calls = {"count": 0}
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return b'{"candidates":[{"content":{"parts":[{"text":"OK"}]}}]}'
+
+        def fake_urlopen(request, timeout):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise urllib.error.HTTPError(request.full_url, 429, "rate limited", {}, io.BytesIO(b"rate limited"))
+            return FakeResponse()
+
+        client = GeminiGenerateClient(
+            api_key="gemini-test",
+            default_model="gemini-2.5-flash",
+            max_retries=2,
+            retry_initial_delay_seconds=0,
+        )
+        with patch("urllib.request.urlopen", fake_urlopen):
+            response = client.generate(input_text="Hi")
+
+        self.assertEqual(calls["count"], 2)
         self.assertEqual(gemini_output_text(response), "OK")
 
 

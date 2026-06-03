@@ -15,6 +15,7 @@ from research_agent.collectors import (
     search_crossref,
     search_openalex,
     search_semantic_scholar,
+    _url_in_allowed_domains,
 )
 from research_agent.config import SourceSettings
 from research_agent.models import SourceRecord
@@ -78,6 +79,15 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(calls["create"]["tools"][0]["type"], "web_search")
         self.assertEqual(calls["create"]["tools"][0]["filters"]["allowed_domains"], ["developers.openai.com"])
         self.assertEqual(calls["create"]["tool_choice"], "required")
+
+    def test_allowed_domain_filter_rejects_malformed_urls(self) -> None:
+        allowed = ["developers.openai.com"]
+
+        self.assertFalse(_url_in_allowed_domains("", allowed))
+        self.assertFalse(_url_in_allowed_domains("developers.openai.com/api/docs", allowed))
+        self.assertFalse(_url_in_allowed_domains("ftp://developers.openai.com/api/docs", allowed))
+        self.assertFalse(_url_in_allowed_domains("https://developers.openai.com:bad/path", allowed))
+        self.assertTrue(_url_in_allowed_domains("https://developers.openai.com/api/docs", allowed))
 
     def test_official_docs_uses_gemini_google_search_and_filters_domains(self) -> None:
         calls = {}

@@ -124,7 +124,7 @@ Research run마다 `topic-map` note도 이 영역에 생성된다. topic-map은 
 
 `bilingual-audit` 명령은 generated report note를 대상으로 bilingual 계약을 점검한다. `language: bilingual`, `translation_language: ko`, `**한국어 번역**` 블록 누락은 실패로 보고, `한국어 번역 검토 필요` 같은 품질 마커나 현재 내장 사전과 다른 `dictionary` 번역 부록은 경고로 보고한다. `Translation mode:`가 수동 보정 모드인 부록은 내장 사전 refresh 경고 대상에서 제외한다. `--write-note` 결과 note는 `type: bilingual-audit`로 저장되며, 감사 대상 report type에는 포함되지 않는다.
 
-`run` 명령은 완료 직후 이번 run에서 생성한 source note, evidence ledger, service blueprint, topic map, run-log만 대상으로 bilingual audit을 실행하고, run-log의 `## Bilingual Audit` 섹션에 요약을 기록한다. 이 자동 요약은 기존 vault의 오래된 노트 상태와 분리해서 새 산출물의 한글 병기 계약을 확인하기 위한 것이다.
+`run` 명령은 완료 직후 이번 run에서 생성한 source note, evidence ledger, service blueprint, topic map을 대상으로 bilingual audit을 실행하고, run-log의 `## Bilingual Audit` 섹션에 요약을 기록한다. run-log는 감사 요약을 포함해 한 번만 저장된다. 이 자동 요약은 기존 vault의 오래된 노트 상태와 분리해서 새 산출물의 한글 병기 계약을 확인하기 위한 것이다.
 
 ### service-blueprint
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any
 
@@ -8,6 +9,8 @@ from .gemini_client import GeminiError, GeminiGenerateClient, gemini_output_text
 from .models import EvidenceBundle, EvidenceClaim, SourceRecord
 from .openai_client import OpenAIError, OpenAIResponsesClient, output_text
 
+
+logger = logging.getLogger(__name__)
 
 EVIDENCE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -59,6 +62,11 @@ def extract_evidence(
     offline: bool,
 ) -> EvidenceBundle:
     if offline or not api_key or not sources:
+        reason = "offline" if offline else "missing api key" if not api_key else "no sources"
+        logger.info(
+            "using fallback evidence extraction",
+            extra={"stage": "extract_evidence", "provider": provider, "topic": topic, "reason": reason},
+        )
         return fallback_evidence(topic, sources)
 
     if provider == "gemini":
@@ -91,7 +99,11 @@ def _extract_evidence_with_openai(
                 "strict": True,
             },
         )
-    except OpenAIError:
+    except OpenAIError as exc:
+        logger.warning(
+            "structured evidence extraction failed; using fallback evidence",
+            extra={"stage": "extract_evidence", "provider": "openai", "topic": topic, "error": str(exc)},
+        )
         return fallback_evidence(topic, sources)
 
     bundle = parse_evidence_output(output_text(response), sources=sources)
@@ -117,7 +129,11 @@ def _extract_evidence_with_gemini(
             model=model,
             response_schema=EVIDENCE_SCHEMA,
         )
-    except GeminiError:
+    except GeminiError as exc:
+        logger.warning(
+            "structured evidence extraction failed; using fallback evidence",
+            extra={"stage": "extract_evidence", "provider": "gemini", "topic": topic, "error": str(exc)},
+        )
         return fallback_evidence(topic, sources)
 
     bundle = parse_evidence_output(gemini_output_text(response), sources=sources)
@@ -132,6 +148,10 @@ def _structured_or_fallback(topic: str, sources: list[SourceRecord], bundle: Evi
             needs_verification=bundle.needs_verification,
             extraction_mode="structured-json",
         )
+    logger.warning(
+        "structured evidence output had no valid claims; using fallback evidence",
+        extra={"stage": "extract_evidence", "topic": topic, "extraction_mode": bundle.extraction_mode},
+    )
     return fallback_evidence(topic, sources)
 
 
@@ -139,7 +159,8 @@ def fallback_evidence(topic: str, sources: list[SourceRecord]) -> EvidenceBundle
     claims: list[EvidenceClaim] = []
     for index, source in enumerate(sources, start=1):
         source_id = f"S{index:03d}"
-        claim = source.summary.replace("\n", " ").strip() or f"Review {source.title} for topic relevance."
+        summary = source.summary.replace("\n", " ").strip()
+        claim = summary or f"Review {source.title} for topic relevance."
         evidence = source.summary.replace("\n", " ").strip() or source.title
         source_url = source.url or source.canonical_url
         claims.append(
@@ -157,6 +178,7 @@ def fallback_evidence(topic: str, sources: list[SourceRecord]) -> EvidenceBundle
         )
 
     needs = [
+        "Evidence extraction used fallback source summaries; review each claim before treating it as verified.",
         "Confirm exact official documentation pages instead of relying only on seed domains.",
         "Confirm paper metadata and DOI/arXiv IDs for all paper claims.",
     ]
@@ -174,7 +196,19 @@ def fallback_evidence(topic: str, sources: list[SourceRecord]) -> EvidenceBundle
 def parse_evidence_output(text: str, *, sources: list[SourceRecord]) -> EvidenceBundle:
     data = _json_object(text)
     if not isinstance(data, dict):
+        logger.warning(
+            "evidence output was not valid JSON",
+            extra={"stage": "parse_evidence", "text_length": len(text)},
+        )
         return EvidenceBundle(claims=[], extraction_mode="parse-failed")
+
+    errors = _validate_evidence_payload(data)
+    if errors:
+        logger.warning(
+            "evidence output failed schema validation",
+            extra={"stage": "parse_evidence", "errors": errors[:5]},
+        )
+        return EvidenceBundle(claims=[], needs_verification=errors, extraction_mode="schema-invalid")
 
     source_by_id = {f"S{index:03d}": source for index, source in enumerate(sources, start=1)}
     claims: list[EvidenceClaim] = []
@@ -191,6 +225,51 @@ def parse_evidence_output(text: str, *, sources: list[SourceRecord]) -> Evidence
         needs_verification=_string_list(data.get("needs_verification")),
         extraction_mode="structured-json",
     )
+
+
+def _validate_evidence_payload(data: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    required_top_level = {"claims", "conflicts", "needs_verification"}
+    for key in sorted(required_top_level):
+        if key not in data:
+            errors.append(f"Missing required evidence field: {key}")
+
+    claims = data.get("claims")
+    if not isinstance(claims, list):
+        errors.append("Evidence field must be a list: claims")
+    else:
+        required_claim_fields = {
+            "claim_id",
+            "source_id",
+            "claim",
+            "evidence",
+            "source_title",
+            "source_url",
+            "source_type",
+            "confidence",
+            "category",
+        }
+        for index, item in enumerate(claims, start=1):
+            if not isinstance(item, dict):
+                errors.append(f"Claim {index} must be an object.")
+                continue
+            for key in sorted(required_claim_fields):
+                if key not in item:
+                    errors.append(f"Claim {index} missing required field: {key}")
+                elif not isinstance(item.get(key), str):
+                    errors.append(f"Claim {index} field must be a string: {key}")
+            confidence = item.get("confidence")
+            if isinstance(confidence, str) and confidence not in {"low", "medium", "high"}:
+                errors.append(f"Claim {index} has invalid confidence: {confidence}")
+
+    for key in ("conflicts", "needs_verification"):
+        value = data.get(key)
+        if not isinstance(value, list):
+            errors.append(f"Evidence field must be a list: {key}")
+        elif any(not isinstance(item, str) for item in value):
+            errors.append(f"Evidence field must contain only strings: {key}")
+
+    return errors
 
 
 def _evidence_prompt(topic: str, sources: list[SourceRecord]) -> str:
