@@ -191,7 +191,9 @@ class PortalE2ESmokeScriptTests(unittest.TestCase):
         html = """
         <h1>리서치 에이전트 포털</h1>
         <section>Research Workflow <div id="workflowTrack"></div></section>
-        <details><strong id="systemSummary"></strong></details>
+        <button id="systemDrawerButton" aria-controls="systemDrawer">시스템 상태</button>
+        <div id="systemDrawerBackdrop"></div>
+        <aside id="systemDrawer"><button id="systemDrawerClose">닫기</button><strong id="systemSummary"></strong></aside>
         <button id="refreshButton">상태 갱신</button><span id="refreshFeedback"></span>
         <section class="review-board layout-wide"></section>
         <form id="runForm">
@@ -221,6 +223,7 @@ class PortalE2ESmokeScriptTests(unittest.TestCase):
         function applyPreset() {}
         function renderWorkflow() {}
         function setRefreshState() {}
+        function setSystemDrawer() {}
         function renderJobResult() {}
         function renderMarkdown() {}
         function renderReviewActions() {}

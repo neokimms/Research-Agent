@@ -1202,12 +1202,50 @@ _PORTAL_HTML = """<!doctype html>
       <h1>리서치 에이전트 포털</h1>
     </div>
     <div class="top-actions">
+      <button id="systemDrawerButton" class="nav-button status-menu-button" type="button" aria-controls="systemDrawer" aria-expanded="false">
+        <span>시스템 상태</span>
+        <span id="apiBadge" class="badge">확인 중</span>
+      </button>
       <a class="nav-button" href="/guide">가이드</a>
       <input id="tokenInput" class="token-input" type="password" autocomplete="off" placeholder="Bearer 토큰">
       <button id="refreshButton" type="button" title="Provider, Vault 상태, 후속 작업, 작업 목록을 다시 불러옵니다.">상태 갱신</button>
       <span id="refreshFeedback" class="refresh-feedback" aria-live="polite"></span>
     </div>
   </header>
+
+  <div id="systemDrawerBackdrop" class="drawer-backdrop" aria-hidden="true"></div>
+  <aside id="systemDrawer" class="system-drawer" role="dialog" aria-modal="false" aria-labelledby="systemDrawerTitle" aria-hidden="true" tabindex="-1">
+    <div class="drawer-head">
+      <div>
+        <p class="eyebrow">System Status</p>
+        <h2 id="systemDrawerTitle">시스템 상태</h2>
+      </div>
+      <button id="systemDrawerClose" class="icon-button" type="button" aria-label="시스템 상태 닫기">닫기</button>
+    </div>
+    <p id="systemSummary" class="drawer-summary">Provider, Vault, 작업 저장소 상태를 확인합니다.</p>
+    <section class="status-grid drawer-status-grid" aria-live="polite">
+      <article class="stat">
+        <span>Provider</span>
+        <strong id="providerStatus">-</strong>
+      </article>
+      <article class="stat">
+        <span>Obsidian Vault</span>
+        <strong id="vaultStatus">-</strong>
+      </article>
+      <article class="stat">
+        <span>Vault Health</span>
+        <strong id="healthStatus">-</strong>
+      </article>
+      <article class="stat">
+        <span>Vault 정비</span>
+        <strong id="actionStatus">-</strong>
+      </article>
+      <article class="stat">
+        <span>작업 저장소</span>
+        <strong id="jobStoreStatus">-</strong>
+      </article>
+    </section>
+  </aside>
 
   <main class="layout">
     <section class="panel workflow-panel layout-wide" aria-label="Research Workflow">
@@ -1220,36 +1258,6 @@ _PORTAL_HTML = """<!doctype html>
       </div>
       <div id="workflowTrack" class="workflow-track"></div>
     </section>
-
-    <details class="system-panel layout-wide">
-      <summary>
-        <span>시스템 상태</span>
-        <strong id="systemSummary">Provider, Vault, 작업 저장소 상태를 확인합니다.</strong>
-        <span id="apiBadge" class="badge">확인 중</span>
-      </summary>
-      <section class="status-grid" aria-live="polite">
-        <article class="stat">
-          <span>Provider</span>
-          <strong id="providerStatus">-</strong>
-        </article>
-        <article class="stat">
-          <span>Obsidian Vault</span>
-          <strong id="vaultStatus">-</strong>
-        </article>
-        <article class="stat">
-          <span>Vault Health</span>
-          <strong id="healthStatus">-</strong>
-        </article>
-        <article class="stat">
-          <span>Vault 정비</span>
-          <strong id="actionStatus">-</strong>
-        </article>
-        <article class="stat">
-          <span>작업 저장소</span>
-          <strong id="jobStoreStatus">-</strong>
-        </article>
-      </section>
-    </details>
 
     <section class="panel run-panel layout-wide">
       <div class="section-head">
@@ -1475,6 +1483,78 @@ h2 {
 
 .nav-button:hover {
   border-color: var(--accent);
+}
+
+.status-menu-button {
+  gap: 8px;
+}
+
+.status-menu-button .badge {
+  min-width: 52px;
+  padding: 4px 8px;
+}
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(24, 33, 31, 0.24);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+.drawer-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.system-drawer {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 50;
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  width: min(430px, calc(100vw - 28px));
+  height: 100vh;
+  padding: 22px;
+  overflow: auto;
+  border-right: 1px solid var(--line);
+  background: #ffffff;
+  box-shadow: 18px 0 36px rgba(24, 33, 31, 0.16);
+  transform: translateX(-100%);
+  transition: transform 180ms ease;
+}
+
+.system-drawer.open {
+  transform: translateX(0);
+}
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.drawer-summary {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.drawer-status-grid {
+  grid-template-columns: 1fr;
+}
+
+.icon-button {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
 }
 
 .layout {
@@ -1742,36 +1822,6 @@ h2 {
   color: var(--accent-strong);
   font-size: 13px;
   font-weight: 900;
-}
-
-.system-panel {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.system-panel summary {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  min-height: 50px;
-  padding: 0 14px;
-  cursor: pointer;
-}
-
-.system-panel summary span:first-child {
-  font-weight: 900;
-}
-
-.system-panel summary strong {
-  color: var(--muted);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-
-.system-panel .status-grid {
-  padding: 0 14px 14px;
 }
 
 .stat {
@@ -2328,11 +2378,6 @@ button.primary:hover {
     grid-template-columns: 1fr;
   }
 
-  .system-panel summary {
-    grid-template-columns: 1fr;
-    padding: 12px;
-  }
-
   .guide-hero h2 {
     font-size: 24px;
   }
@@ -2349,7 +2394,8 @@ const state = {
   currentJobId: "",
   pollTimer: null,
   preset: "architecture",
-  isRefreshing: false
+  isRefreshing: false,
+  systemDrawerOpen: false
 };
 
 const WORKFLOW_STEPS = [
@@ -3036,6 +3082,20 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function setSystemDrawer(open) {
+  state.systemDrawerOpen = open;
+  const drawer = el("systemDrawer");
+  const backdrop = el("systemDrawerBackdrop");
+  const button = el("systemDrawerButton");
+  drawer.classList.toggle("open", open);
+  backdrop.classList.toggle("open", open);
+  drawer.setAttribute("aria-hidden", open ? "false" : "true");
+  button.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) {
+    drawer.focus();
+  }
+}
+
 function init() {
   const storedToken = localStorage.getItem("researchAgentPortalToken") || "";
   el("tokenInput").value = storedToken;
@@ -3046,6 +3106,14 @@ function init() {
   applyPreset(state.preset);
   el("runForm").addEventListener("submit", submitRun);
   el("refreshButton").addEventListener("click", () => refreshStatus({ reloadCurrentJob: true }));
+  el("systemDrawerButton").addEventListener("click", () => setSystemDrawer(!state.systemDrawerOpen));
+  el("systemDrawerClose").addEventListener("click", () => setSystemDrawer(false));
+  el("systemDrawerBackdrop").addEventListener("click", () => setSystemDrawer(false));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.systemDrawerOpen) {
+      setSystemDrawer(false);
+    }
+  });
   refreshStatus();
 }
 
