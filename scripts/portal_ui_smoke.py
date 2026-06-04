@@ -77,6 +77,7 @@ def _validate_research_portal_assets(
             'id="workflowTrack"',
             'id="systemSummary"',
             'id="refreshFeedback"',
+            'class="review-board layout-wide"',
             'id="topicInput"',
             'id="providerInput"',
             'id="presetButtons"',

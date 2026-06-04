@@ -50,6 +50,7 @@ class PortalUISmokeScriptTests(unittest.TestCase):
         <section>Research Workflow <div id="workflowTrack"></div></section>
         <details><strong id="systemSummary"></strong></details>
         <button id="refreshButton">상태 갱신</button><span id="refreshFeedback"></span>
+        <section class="review-board layout-wide"></section>
         <form id="runForm">
           <label>리서치 질문 / 목표</label>
           <textarea id="topicInput"></textarea>

@@ -471,6 +471,7 @@ def _verify_research_portal_static(base_url: str, *, bearer_token: str | None = 
             'id="workflowTrack"',
             'id="systemSummary"',
             'id="refreshFeedback"',
+            'class="review-board layout-wide"',
             'id="providerInput"',
             'id="presetButtons"',
             'id="depthInput"',

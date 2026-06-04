@@ -1251,7 +1251,7 @@ _PORTAL_HTML = """<!doctype html>
       </section>
     </details>
 
-    <section class="panel run-panel">
+    <section class="panel run-panel layout-wide">
       <div class="section-head">
         <div>
           <p class="eyebrow">1. 목표 정의</p>
@@ -1328,50 +1328,52 @@ _PORTAL_HTML = """<!doctype html>
       </form>
     </section>
 
-    <section class="panel result-panel">
-      <div class="section-head">
-        <div>
-          <p class="eyebrow">Workflow Review</p>
-          <h2>결과 검토</h2>
+    <section class="review-board layout-wide" aria-label="Research review board">
+      <section class="panel review-board-card result-panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Workflow Review</p>
+            <h2>결과 검토</h2>
+          </div>
+          <span id="resultBadge" class="badge">대기</span>
         </div>
-        <span id="resultBadge" class="badge">대기</span>
-      </div>
-      <div id="progressSteps" class="progress-steps"></div>
-      <div id="resultOutput" class="result-output result-empty">리서치 요청을 실행하면 단계별 검토 화면이 표시됩니다.</div>
-    </section>
+        <div id="progressSteps" class="progress-steps"></div>
+        <div id="resultOutput" class="result-output result-empty">리서치 요청을 실행하면 단계별 검토 화면이 표시됩니다.</div>
+      </section>
 
-    <section class="panel action-panel">
-      <div class="section-head">
-        <h2>리서치 리뷰</h2>
-        <span id="reviewActionCount" class="badge">0</span>
-      </div>
-      <div id="reviewActionList" class="action-list">
-        <div class="action-row">
-          <p class="action-title">실행 결과를 기다리는 중입니다</p>
-          <div class="action-detail">완료된 run을 선택하면 검토할 근거와 품질 이슈가 표시됩니다.</div>
+      <section class="panel review-board-card action-panel">
+        <div class="section-head">
+          <h2>리서치 리뷰</h2>
+          <span id="reviewActionCount" class="badge">0</span>
         </div>
-      </div>
-    </section>
-
-    <section class="panel action-panel">
-      <div class="section-head">
-        <h2>Vault 정비</h2>
-        <span id="actionCount" class="badge">0</span>
-      </div>
-      <div id="actionList" class="action-list">
-        <div class="action-row">
-          <p class="action-title">후속 작업을 불러오는 중입니다</p>
-          <div class="action-detail">Vault 상태를 확인하고 있습니다.</div>
+        <div id="reviewActionList" class="action-list">
+          <div class="action-row">
+            <p class="action-title">실행 결과를 기다리는 중입니다</p>
+            <div class="action-detail">완료된 run을 선택하면 검토할 근거와 품질 이슈가 표시됩니다.</div>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section class="panel">
-      <div class="section-head">
-        <h2>작업</h2>
-        <span id="jobCount" class="badge">0</span>
-      </div>
-      <div id="jobList" class="job-list"></div>
+      <section class="panel review-board-card action-panel">
+        <div class="section-head">
+          <h2>Vault 정비</h2>
+          <span id="actionCount" class="badge">0</span>
+        </div>
+        <div id="actionList" class="action-list">
+          <div class="action-row">
+            <p class="action-title">후속 작업을 불러오는 중입니다</p>
+            <div class="action-detail">Vault 상태를 확인하고 있습니다.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel review-board-card">
+        <div class="section-head">
+          <h2>작업</h2>
+          <span id="jobCount" class="badge">0</span>
+        </div>
+        <div id="jobList" class="job-list"></div>
+      </section>
     </section>
   </main>
 
@@ -1625,6 +1627,32 @@ h2 {
   min-width: 0;
 }
 
+.review-board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 18px;
+}
+
+.review-board-card {
+  min-width: 0;
+}
+
+.review-board-card .section-head {
+  min-height: 42px;
+}
+
+.review-board .progress-steps {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.review-board .action-list,
+.review-board .job-list,
+.review-board .result-output {
+  max-height: 560px;
+  overflow: auto;
+}
+
 .section-head {
   display: flex;
   align-items: center;
@@ -1657,16 +1685,16 @@ h2 {
 
 .workflow-track {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(6, minmax(156px, 1fr));
+  gap: 12px;
 }
 
 .workflow-step {
   display: grid;
-  grid-template-columns: 28px 1fr;
-  gap: 8px;
-  min-height: 68px;
-  padding: 10px;
+  grid-template-columns: 34px 1fr;
+  gap: 10px;
+  min-height: 92px;
+  padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfcfa;
@@ -1679,13 +1707,13 @@ h2 {
 }
 
 .workflow-step strong {
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .workflow-step span {
-  margin-top: 3px;
+  margin-top: 5px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .workflow-step.done {
@@ -1707,12 +1735,12 @@ h2 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
   border-radius: 999px;
   background: #ffffff;
   color: var(--accent-strong);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 900;
 }
 
@@ -2265,6 +2293,16 @@ button.primary:hover {
   color: var(--bad);
 }
 
+@media (max-width: 1180px) {
+  .workflow-track {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .review-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 920px) {
   .topbar,
   .top-actions {
@@ -2283,6 +2321,7 @@ button.primary:hover {
   .status-grid,
   .run-form,
   .workflow-track,
+  .review-board,
   .option-grid,
   .advanced-grid,
   .progress-steps {
