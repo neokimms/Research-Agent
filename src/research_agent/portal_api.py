@@ -1096,13 +1096,16 @@ def _build_run_review_summary(paths: Mapping[str, Any], vault_path: Path) -> dic
     blueprint_path = _optional_string(paths.get("service_blueprint"))
     evidence_path = _optional_string(paths.get("evidence_ledger"))
     run_path = _optional_string(paths.get("run_note"))
+    topic_map_path = _optional_string(paths.get("topic_map"))
     blueprint_markdown = _read_markdown_preview(blueprint_path)
     evidence_markdown = _read_markdown_preview(evidence_path)
     run_markdown = _read_markdown_preview(run_path)
+    topic_map_markdown = _read_markdown_preview(topic_map_path)
     return {
         "service_blueprint_markdown": blueprint_markdown,
         "evidence_ledger_markdown": evidence_markdown,
         "run_note_markdown": run_markdown,
+        "topic_map_markdown": topic_map_markdown,
         "quality_gates": _parse_quality_gates(run_markdown or evidence_markdown),
         "review_tasks": _build_review_tasks(evidence_markdown, run_markdown),
         "obsidian_links": _obsidian_links(paths, vault_path),
@@ -2427,10 +2430,30 @@ button.primary:hover {
 .artifact-link {
   display: grid;
   align-content: center;
+  gap: 5px;
   color: var(--accent-strong);
   font-weight: 800;
   text-decoration: none;
   overflow-wrap: anywhere;
+}
+
+.artifact-link span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.report-preview-button {
+  width: 100%;
+  appearance: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.report-preview-button:hover {
+  border-color: var(--accent);
+  background: var(--soft);
 }
 
 .markdown-preview {
@@ -2552,7 +2575,7 @@ const state = {
   isRefreshing: false,
   systemDrawerOpen: false,
   reportModalOpen: false,
-  reportActiveTab: "report",
+  reportActiveTab: "summary",
   reportTabs: {}
 };
 
@@ -2566,14 +2589,17 @@ const WORKFLOW_STEPS = [
 ];
 
 const REPORT_TAB_LABELS = {
-  report: "보고서",
-  evidence: "근거",
+  summary: "요약",
+  blueprint: "Blueprint",
+  evidence: "Evidence Ledger",
+  run: "Run Note",
+  topic: "Topic Map",
   quality: "품질 점검",
   vault: "Obsidian 위치",
   review: "리뷰 작업"
 };
 
-const REPORT_TAB_ORDER = ["report", "evidence", "quality", "vault", "review"];
+const REPORT_TAB_ORDER = ["summary", "blueprint", "evidence", "run", "topic", "quality", "vault", "review"];
 
 const PRESETS = {
   architecture: {
@@ -2939,26 +2965,40 @@ function renderJobResult(job) {
   const context = summary.research_context || {};
   const markdown = review.service_blueprint_markdown || "";
   const evidenceMarkdown = review.evidence_ledger_markdown || "";
+  const runMarkdown = review.run_note_markdown || "";
+  const topicMarkdown = review.topic_map_markdown || "";
   const quality = Array.isArray(review.quality_gates) ? review.quality_gates : [];
   const tasks = Array.isArray(review.review_tasks) ? review.review_tasks : [];
   const links = review.obsidian_links || {};
   const paths = summary.paths || {};
   state.reportTabs = {
-    report: `
+    summary: `
       <div class="result-stack">
         ${resultSection("결과 보고서", `
           <div class="artifact-grid">${renderReportLinks(links, paths)}</div>
-          <div class="action-detail">Service Blueprint는 최종 보고서, Evidence Ledger는 근거 검토용 원장입니다.</div>
+          <div class="action-detail">아래 버튼은 웹 포털 안에서 보고서 본문을 엽니다. Obsidian 원본 링크는 "Obsidian 위치" 탭에서 확인합니다.</div>
         `, "Report")}
-        ${resultSection("Service Blueprint", `<div class="markdown-preview">${renderMarkdown(markdown || "Service Blueprint preview가 없습니다.")}</div>`, "5. Blueprint")}
+        ${resultSection("요약", `
+          <div class="context-grid">
+            ${contextCard("상태", job.status)}
+            ${contextCard("리서치 유형", context.research_type || job.research_type || "-")}
+            ${contextCard("리포트 프로필", context.report_profile || "-")}
+            ${contextCard("분석 깊이", context.research_depth || job.research_depth || "-")}
+            ${contextCard("품질 게이트", qualitySummaryText(quality))}
+            ${contextCard("리뷰 작업", `${tasks.length}건`)}
+          </div>
+        `, "Summary")}
       </div>
     `,
+    blueprint: `<div class="result-stack">${resultSection("Service Blueprint", `<div class="markdown-preview">${renderMarkdown(markdown || "Service Blueprint preview가 없습니다.")}</div>`, "5. Blueprint")}</div>`,
     evidence: `
       <div class="result-stack">
         ${resultSection("수집된 출처", renderSourceNotes(paths, links), "2. Sources")}
-        ${resultSection("추출된 핵심 근거", `<div class="markdown-preview">${renderMarkdown(markdownExcerpt(evidenceMarkdown, 80) || "Evidence Ledger preview가 없습니다.")}</div>`, "3. Evidence")}
+        ${resultSection("Evidence Ledger", `<div class="markdown-preview">${renderMarkdown(evidenceMarkdown || "Evidence Ledger preview가 없습니다.")}</div>`, "3. Evidence")}
       </div>
     `,
+    run: `<div class="result-stack">${resultSection("Run Note", `<div class="markdown-preview">${renderMarkdown(runMarkdown || "Run Note preview가 없습니다.")}</div>`, "Run")}</div>`,
+    topic: `<div class="result-stack">${resultSection("Topic Map", `<div class="markdown-preview">${renderMarkdown(topicMarkdown || "Topic Map preview가 없습니다.")}</div>`, "Topic")}</div>`,
     quality: `<div class="result-stack">${resultSection("품질 점검", `<div class="quality-grid">${quality.length ? quality.map(qualityCard).join("") : contextCard("상태", "품질 게이트 정보 없음")}</div>`, "4. Quality Gate")}</div>`,
     vault: `<div class="result-stack">${resultSection("Obsidian 저장 위치", `<div class="artifact-grid">${renderArtifactLinks(links, paths)}</div>`, "6. Vault")}</div>`,
     review: `<div class="result-stack">${resultSection("다음 리뷰 작업", `<div class="review-task-grid">${renderReviewTaskCards(tasks)}</div>`, "7. Human Review")}</div>`
@@ -2967,10 +3007,11 @@ function renderJobResult(job) {
   el("resultOutput").innerHTML = `
     <div class="result-compact">
       ${resultSection("결과 보고서", `
+        <div class="artifact-grid compact-artifacts">${renderReportLinks(links, paths)}</div>
         <div class="report-summary-actions">
-          <button id="openReportModalButton" class="report-open-button" type="button">보고서 상세 보기</button>
+          <button id="openReportModalButton" class="report-open-button" type="button">보고서 전체 보기</button>
         </div>
-        <div class="action-detail">보고서 본문, 근거, 품질 점검, Obsidian 위치는 상세 보기에서 확인합니다.</div>
+        <div class="action-detail">보고서 본문은 웹 포털에서 바로 확인할 수 있고, Obsidian 원본 파일도 함께 생성됩니다.</div>
       `, "Report")}
       ${resultSection("요약", `
         <div class="context-grid">
@@ -2991,7 +3032,7 @@ function renderDryRunResult(job, summary) {
   const artifacts = Array.isArray(summary.artifacts) ? summary.artifacts : [];
   const safety = Array.isArray(summary.safety) ? summary.safety : [];
   state.reportTabs = {
-    report: `<div class="result-stack">${resultSection("결과 보고서 생성 전 확인", `<div class="json-fallback">현재 실행은 드라이런입니다. Obsidian 보고서는 아직 생성하지 않습니다. 실제 보고서를 확인하려면 실행 안전 설정에서 "드라이런으로 먼저 확인"을 끄고 다시 실행하세요.</div>`, "Report")}</div>`,
+    summary: `<div class="result-stack">${resultSection("결과 보고서 생성 전 확인", `<div class="json-fallback">현재 실행은 드라이런입니다. Obsidian 보고서는 아직 생성하지 않습니다. 실제 보고서를 확인하려면 실행 안전 설정에서 "드라이런으로 먼저 확인"을 끄고 다시 실행하세요.</div>`, "Report")}</div>`,
     vault: `<div class="result-stack">${resultSection("Obsidian 저장 계획", renderPlannedArtifacts(artifacts), "3. Vault")}</div>`,
     quality: `<div class="result-stack">${resultSection("안전 점검", `<div class="quality-grid">${safety.map((item) => qualityCard({ status: item.status, name: item.name, detail: item.detail })).join("")}</div>`, "4. Safety")}</div>`
   };
@@ -3058,11 +3099,18 @@ function qualitySummaryText(quality) {
 function bindReportSummaryActions() {
   const button = el("openReportModalButton");
   if (button) {
-    button.addEventListener("click", () => setReportModal(true, "report"));
+    button.addEventListener("click", () => setReportModal(true, "summary"));
   }
+  bindReportPreviewButtons(document);
 }
 
-function setReportModal(open, tabKey = state.reportActiveTab || "report") {
+function bindReportPreviewButtons(root) {
+  root.querySelectorAll("[data-open-report-tab]").forEach((node) => {
+    node.addEventListener("click", () => setReportModal(true, node.dataset.openReportTab || "summary"));
+  });
+}
+
+function setReportModal(open, tabKey = state.reportActiveTab || "summary") {
   state.reportModalOpen = open;
   const modal = el("reportModal");
   const backdrop = el("reportModalBackdrop");
@@ -3075,7 +3123,7 @@ function setReportModal(open, tabKey = state.reportActiveTab || "report") {
   }
 }
 
-function renderReportModal(tabKey = "report") {
+function renderReportModal(tabKey = "summary") {
   const availableKeys = REPORT_TAB_ORDER.filter((key) => state.reportTabs[key]);
   if (!availableKeys.length) {
     el("reportModalTabs").innerHTML = "";
@@ -3093,6 +3141,7 @@ function renderReportModal(tabKey = "report") {
   el("reportModalTabs").querySelectorAll("[data-report-tab]").forEach((node) => {
     node.addEventListener("click", () => renderReportModal(node.dataset.reportTab));
   });
+  bindReportPreviewButtons(el("reportModalContent"));
 }
 
 function renderArtifactLinks(links, paths) {
@@ -3115,19 +3164,23 @@ function renderArtifactLinks(links, paths) {
 }
 
 function renderReportLinks(links, paths) {
-  const labels = {
-    service_blueprint: "Service Blueprint 보고서 열기",
-    evidence_ledger: "Evidence Ledger 열기",
-    run_note: "Run Note 열기"
-  };
-  const rows = Object.entries(labels).map(([key, label]) => {
-    if (links[key]) {
-      return `<a class="artifact-link" href="${escapeHtml(links[key])}">${escapeHtml(label)}</a>`;
+  const targets = [
+    { tab: "blueprint", path: "service_blueprint", label: "Blueprint 보고서 보기", detail: "최종 합성 보고서" },
+    { tab: "evidence", path: "evidence_ledger", label: "Evidence Ledger 보기", detail: "claim과 citation 근거 원장" },
+    { tab: "run", path: "run_note", label: "Run Note 보기", detail: "실행 로그와 품질 점검" }
+  ];
+  const rows = targets.map((item) => {
+    if (!paths[item.path] && !links[item.path]) {
+      return "";
     }
-    if (paths[key]) {
-      return `<div class="artifact-link">${escapeHtml(label)}<span class="action-detail">${escapeHtml(paths[key])}</span></div>`;
-    }
-    return "";
+    const pathDetail = paths[item.path] ? `<span class="action-detail">${escapeHtml(paths[item.path])}</span>` : "";
+    return `
+      <button class="artifact-link report-preview-button" type="button" data-open-report-tab="${escapeHtml(item.tab)}">
+        <strong>${escapeHtml(item.label)}</strong>
+        <span>${escapeHtml(item.detail)}</span>
+        ${pathDetail}
+      </button>
+    `;
   }).filter(Boolean);
   return rows.join("") || `<div class="json-fallback">보고서 링크가 없습니다. 작업 상태와 Vault 쓰기 설정을 확인하세요.</div>`;
 }
