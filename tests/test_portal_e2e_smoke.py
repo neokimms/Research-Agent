@@ -192,19 +192,31 @@ class PortalE2ESmokeScriptTests(unittest.TestCase):
         <h1>리서치 에이전트 포털</h1>
         <form id="runForm">
           <select id="providerInput"></select>
+          <div id="presetButtons"></div>
+          <select id="depthInput"></select>
+          <input id="bilingualInput" type="checkbox" checked>
+          <div id="reviewActionList"></div>
+          <div id="progressSteps"></div>
           <strong id="jobStoreStatus"></strong>
           <a href="/guide">가이드</a>
-          <section><h2>후속 작업</h2><div id="actionList"></div></section>
+          <section><h2>리서치 리뷰</h2></section>
+          <section><h2>Vault 정비</h2><div id="actionList"></div></section>
         </form>
         """
         guide = """
         <h1>리서치 에이전트 포털 가이드</h1>
         <h2>가장 안전한 실행 순서</h2>
+        <h3>리서치 유형</h3>
         <h2>상황별 권장 옵션</h2>
+        <p>Quality Gate</p>
         <h2>Research Agent Portal과 PM Portal의 차이</h2>
         """
         js = """
         async function submitRun() {}
+        function applyPreset() {}
+        function renderJobResult() {}
+        function renderMarkdown() {}
+        function renderReviewActions() {}
         async function refreshJobStoreHealth() {}
         function renderNextActions() {}
         """

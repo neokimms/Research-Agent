@@ -37,11 +37,11 @@ class ObsidianSettings:
 
 @dataclass(frozen=True)
 class ModelSettings:
-    planner: str = "gpt-5.4-mini"
-    extractor: str = "gpt-5.4-mini"
-    classifier: str = "gpt-5.4-mini"
-    synthesis: str = "gpt-5.5"
-    cheap_triage: str = "gpt-5.4-nano"
+    planner: str = "gpt-4o-mini"
+    extractor: str = "gpt-4o-mini"
+    classifier: str = "gpt-4o-mini"
+    synthesis: str = "gpt-4o"
+    cheap_triage: str = "gpt-4o-mini"
 
 
 @dataclass(frozen=True)
@@ -102,7 +102,7 @@ class QualityGateSettings:
     require_source_urls: bool = True
     require_evidence_ledger: bool = True
     require_uncertainty_section: bool = True
-    block_vault_write_on_fail: bool = False
+    block_vault_write_on_fail: bool = True
 
 
 @dataclass(frozen=True)
@@ -188,11 +188,11 @@ def load_settings(path: Path, *, vault_override: Path | None = None, provider_ov
         openai=OpenAISettings(
             api_key_env=str(openai_data.get("api_key_env", "OPENAI_API_KEY")),
             models=ModelSettings(
-                planner=str(model_data.get("planner", "gpt-5.4-mini")),
-                extractor=str(model_data.get("extractor", "gpt-5.4-mini")),
-                classifier=str(model_data.get("classifier", "gpt-5.4-mini")),
-                synthesis=str(model_data.get("synthesis", "gpt-5.5")),
-                cheap_triage=str(model_data.get("cheap_triage", "gpt-5.4-nano")),
+                planner=str(model_data.get("planner", "gpt-4o-mini")),
+                extractor=str(model_data.get("extractor", "gpt-4o-mini")),
+                classifier=str(model_data.get("classifier", "gpt-4o-mini")),
+                synthesis=str(model_data.get("synthesis", "gpt-4o")),
+                cheap_triage=str(model_data.get("cheap_triage", "gpt-4o-mini")),
             ),
         ),
         gemini=GeminiSettings(
@@ -218,7 +218,7 @@ def load_settings(path: Path, *, vault_override: Path | None = None, provider_ov
             require_source_urls=bool(gate_data.get("require_source_urls", True)),
             require_evidence_ledger=bool(gate_data.get("require_evidence_ledger", True)),
             require_uncertainty_section=bool(gate_data.get("require_uncertainty_section", True)),
-            block_vault_write_on_fail=bool(gate_data.get("block_vault_write_on_fail", False)),
+            block_vault_write_on_fail=bool(gate_data.get("block_vault_write_on_fail", True)),
         ),
         common=common,
         report=ReportSettings(

@@ -222,6 +222,7 @@ def render_fallback_blueprint(
     *,
     checked_at: str,
     bilingual: bool = True,
+    source_priority: list[str] | None = None,
 ) -> str:
     source_lines = "\n".join(
         f"- [{source.title}]({source.url or source.canonical_url}) ({source.source_type})"
@@ -238,9 +239,7 @@ checked_at: {yaml_scalar(checked_at)}
 status: draft
 confidence: low
 source_priority:
-  - official-docs
-  - standards
-  - papers
+{_source_priority_frontmatter(source_priority)}
 generated_by: research-agent
 {_language_frontmatter(bilingual)}
 ---
@@ -285,6 +284,13 @@ generated_by: research-agent
 
 ## Related Notes
 """
+
+
+def _source_priority_frontmatter(source_priority: list[str] | None) -> str:
+    priority = [item.strip() for item in source_priority or [] if item.strip()]
+    if not priority:
+        priority = ["official-docs", "standards", "papers"]
+    return "\n".join(f"  - {yaml_scalar(item)}" for item in priority)
 
 
 def _fallback_baseline_block(*, bilingual: bool) -> str:

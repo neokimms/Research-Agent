@@ -212,17 +212,33 @@ def parse_evidence_output(text: str, *, sources: list[SourceRecord]) -> Evidence
 
     source_by_id = {f"S{index:03d}": source for index, source in enumerate(sources, start=1)}
     claims: list[EvidenceClaim] = []
+    dropped = 0
     for index, item in enumerate(data.get("claims", []), start=1):
         if not isinstance(item, dict):
+            dropped += 1
             continue
         claim = _claim_from_mapping(item, source_by_id=source_by_id, fallback_index=index)
         if claim:
             claims.append(claim)
+        else:
+            dropped += 1
+
+    needs_verification = _string_list(data.get("needs_verification"))
+    if dropped:
+        logger.warning(
+            "evidence claims dropped during parsing",
+            extra={"stage": "parse_evidence", "dropped_count": dropped, "accepted_count": len(claims)},
+        )
+        needs_verification = [
+            f"{dropped} evidence claim(s) were dropped during parsing (blank text or model validation failure); "
+            "review source notes and re-run if evidence coverage seems incomplete.",
+            *needs_verification,
+        ]
 
     return EvidenceBundle(
         claims=claims,
         conflicts=_string_list(data.get("conflicts")),
-        needs_verification=_string_list(data.get("needs_verification")),
+        needs_verification=needs_verification,
         extraction_mode="structured-json",
     )
 
@@ -306,8 +322,17 @@ def _evidence_prompt(topic: str, sources: list[SourceRecord]) -> str:
     )
 
 
+_JSON_MAX_BYTES = 512 * 1024  # 512 KB — guards against unbounded regex on huge LLM responses
+
+
 def _json_object(text: str) -> dict[str, Any] | None:
     if not text.strip():
+        return None
+    if len(text.encode("utf-8")) > _JSON_MAX_BYTES:
+        logger.warning(
+            "evidence output exceeded maximum allowed size; skipping JSON extraction",
+            extra={"stage": "parse_evidence", "size_bytes": len(text.encode("utf-8")), "limit_bytes": _JSON_MAX_BYTES},
+        )
         return None
     candidates = [text.strip()]
     match = re.search(r"\{[\s\S]*\}", text)

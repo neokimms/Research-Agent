@@ -27,6 +27,7 @@ from .vault_health import build_vault_health
 PORTAL_JOB_STORE_FILE = "research_portal_jobs.json"
 TERMINAL_JOB_STATUSES = {"completed", "failed", "cancelled", "interrupted"}
 ACTIVE_JOB_STATUSES = {"queued", "running"}
+RUN_PREVIEW_LIMIT = 24_000
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,11 @@ class PortalJobRecord:
     offline: bool = False
     dry_run: bool = False
     max_papers_per_source: int = 2
+    research_type: str = "architecture"
+    research_depth: str = "standard"
+    source_priority: list[str] = field(default_factory=list)
+    domain_focus: str = ""
+    bilingual: bool | None = None
     rerun_of: str | None = None
     run_id: str | None = None
     summary: dict[str, Any] | None = None
@@ -73,6 +79,11 @@ class PortalJobRecord:
             "offline": self.offline,
             "dry_run": self.dry_run,
             "max_papers_per_source": self.max_papers_per_source,
+            "research_type": self.research_type,
+            "research_depth": self.research_depth,
+            "source_priority": self.source_priority,
+            "domain_focus": self.domain_focus,
+            "bilingual": self.bilingual,
             "run_id": self.run_id,
             "status_url": f"/jobs/{self.job_id}",
         }
@@ -111,6 +122,11 @@ class PortalJobRecord:
             offline=bool(payload.get("offline", False)),
             dry_run=bool(payload.get("dry_run", False)),
             max_papers_per_source=_positive_int(payload.get("max_papers_per_source"), default=2),
+            research_type=str(payload.get("research_type", "architecture")).strip() or "architecture",
+            research_depth=str(payload.get("research_depth", "standard")).strip() or "standard",
+            source_priority=_string_list(payload.get("source_priority")),
+            domain_focus=str(payload.get("domain_focus", "")).strip(),
+            bilingual=_optional_bool(payload.get("bilingual")),
             rerun_of=_optional_safe_id(payload.get("rerun_of")),
             run_id=_optional_string(payload.get("run_id")),
             summary=_optional_mapping(payload.get("summary")),
@@ -495,7 +511,17 @@ class ResearchPortalAPIAdapter:
             return _json_response(400, {"error": "invalid_provider", "allowed": ["auto", "openai", "gemini"]})
         offline = bool(payload.get("offline", False))
         dry_run = bool(payload.get("dry_run", False))
-        max_papers = _positive_int(payload.get("max_papers_per_source"), default=2)
+        research_type = str(payload.get("research_type") or "architecture").strip().lower()
+        research_depth = str(payload.get("research_depth") or "standard").strip().lower()
+        if research_depth not in {"quick", "standard", "deep"}:
+            return _json_response(400, {"error": "invalid_research_depth", "allowed": ["quick", "standard", "deep"]})
+        source_priority = _normalize_source_priority(payload.get("source_priority"), research_type=research_type)
+        domain_focus = str(payload.get("domain_focus") or "").strip()[:240]
+        bilingual = _optional_bool(payload.get("bilingual"))
+        max_papers = _positive_int(
+            payload.get("max_papers_per_source"),
+            default=_default_paper_limit(research_depth),
+        )
         rerun_of = _optional_string(payload.get("rerun_of"))
         if rerun_of is not None and not _safe_id(rerun_of):
             return _json_response(400, {"error": "invalid_rerun_of", "detail": "rerun_of must be a safe job id."})
@@ -514,11 +540,30 @@ class ResearchPortalAPIAdapter:
                 offline=offline,
                 dry_run=dry_run,
                 max_papers_per_source=max_papers,
+                research_type=research_type,
+                research_depth=research_depth,
+                source_priority=source_priority,
+                domain_focus=domain_focus,
+                bilingual=bilingual,
                 rerun_of=rerun_of,
             )
             self._jobs[job_id] = record
             self._save_jobs()
-            future = self._executor.submit(self._run_job, job_id, topic, provider, offline, dry_run, max_papers, rerun_of)
+            future = self._executor.submit(
+                self._run_job,
+                job_id,
+                topic,
+                provider,
+                offline,
+                dry_run,
+                max_papers,
+                rerun_of,
+                research_type,
+                research_depth,
+                source_priority,
+                domain_focus,
+                bilingual,
+            )
             self._futures[job_id] = future
 
         return _json_response(202, record.to_dict(include_result=False), headers={"Location": f"/jobs/{job_id}"})
@@ -532,6 +577,11 @@ class ResearchPortalAPIAdapter:
         dry_run: bool,
         max_papers_per_source: int,
         rerun_of: str | None,
+        research_type: str,
+        research_depth: str,
+        source_priority: list[str],
+        domain_focus: str,
+        bilingual: bool | None,
     ) -> None:
         with self._lock:
             record = self._jobs[job_id]
@@ -540,7 +590,18 @@ class ResearchPortalAPIAdapter:
             self._save_jobs()
 
         try:
-            settings = self._settings_for_provider(provider)
+            settings = self._settings_for_run(
+                provider,
+                source_priority=source_priority,
+                bilingual=bilingual,
+            )
+            research_context = {
+                "research_type": research_type,
+                "research_depth": research_depth,
+                "source_priority": source_priority,
+                "domain_focus": domain_focus,
+                "bilingual": settings.report.bilingual,
+            }
             pipeline = ResearchPipeline(settings)
             if dry_run:
                 plan = pipeline.dry_run(topic, offline=offline, max_papers_per_source=max_papers_per_source)
@@ -549,6 +610,7 @@ class ResearchPortalAPIAdapter:
                     "topic": plan.topic,
                     "vault_path": plan.vault_path,
                     "mode": plan.mode,
+                    "research_context": research_context,
                     "artifacts": [asdict(artifact) for artifact in plan.artifacts],
                     "safety": [asdict(check) for check in plan.safety],
                     "paths": {"planned_artifacts": [artifact.path for artifact in plan.artifacts]},
@@ -565,6 +627,8 @@ class ResearchPortalAPIAdapter:
                 summary = {
                     "type": "run",
                     "topic": topic,
+                    "vault_path": str(settings.obsidian.vault_path.expanduser().resolve()),
+                    "research_context": research_context,
                     "artifacts": asdict(artifacts),
                     "paths": {
                         "run_note": artifacts.run_note,
@@ -574,6 +638,7 @@ class ResearchPortalAPIAdapter:
                         "topic_map": artifacts.topic_map,
                     },
                 }
+                summary["review"] = _build_run_review_summary(summary["paths"], settings.obsidian.vault_path)
                 if rerun_of:
                     summary["rerun_of"] = rerun_of
 
@@ -592,10 +657,21 @@ class ResearchPortalAPIAdapter:
                 record.error = {"type": type(exc).__name__, "message": str(exc)}
                 self._save_jobs()
 
-    def _settings_for_provider(self, provider: str) -> Settings:
-        if provider == self.settings.llm.provider:
-            return self.settings
-        return replace(self.settings, llm=LLMSettings(provider=provider))
+    def _settings_for_run(
+        self,
+        provider: str,
+        *,
+        source_priority: list[str],
+        bilingual: bool | None,
+    ) -> Settings:
+        llm = self.settings.llm if provider == self.settings.llm.provider else LLMSettings(provider=provider)
+        sources = self.settings.sources
+        if source_priority:
+            sources = replace(sources, priority=source_priority)
+        report = self.settings.report
+        if bilingual is not None:
+            report = replace(report, bilingual=bilingual)
+        return replace(self.settings, llm=llm, sources=sources, report=report)
 
     def _jobs_response(self, *, head: bool = False) -> PortalAPIResponse:
         with self._lock:
@@ -911,6 +987,48 @@ def _optional_error(value: Any) -> dict[str, str] | None:
     return {str(key): str(item) for key, item in value.items()}
 
 
+def _optional_bool(value: Any) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "no", "n", "off"}:
+        return False
+    return None
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _default_paper_limit(research_depth: str) -> int:
+    if research_depth == "quick":
+        return 1
+    if research_depth == "deep":
+        return 5
+    return 2
+
+
+def _normalize_source_priority(value: Any, *, research_type: str) -> list[str]:
+    explicit = _string_list(value)
+    if explicit:
+        return explicit
+    presets = {
+        "paper": ["papers", "standards", "official-docs", "engineering-articles", "general-web"],
+        "papers": ["papers", "standards", "official-docs", "engineering-articles", "general-web"],
+        "architecture": ["official-docs", "standards", "papers", "engineering-articles", "general-web"],
+        "standards": ["standards", "official-docs", "papers", "engineering-articles", "general-web"],
+        "market": ["general-web", "engineering-articles", "papers", "official-docs", "standards"],
+        "official-docs": ["official-docs", "standards", "papers", "engineering-articles", "general-web"],
+    }
+    return presets.get(research_type, presets["architecture"])
+
+
 def _bool_query(query: Mapping[str, list[str]], key: str, *, default: bool) -> bool:
     values = query.get(key)
     if not values:
@@ -952,6 +1070,108 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def _build_run_review_summary(paths: Mapping[str, Any], vault_path: Path) -> dict[str, Any]:
+    blueprint_path = _optional_string(paths.get("service_blueprint"))
+    evidence_path = _optional_string(paths.get("evidence_ledger"))
+    run_path = _optional_string(paths.get("run_note"))
+    blueprint_markdown = _read_markdown_preview(blueprint_path)
+    evidence_markdown = _read_markdown_preview(evidence_path)
+    run_markdown = _read_markdown_preview(run_path)
+    return {
+        "service_blueprint_markdown": blueprint_markdown,
+        "evidence_ledger_markdown": evidence_markdown,
+        "run_note_markdown": run_markdown,
+        "quality_gates": _parse_quality_gates(run_markdown or evidence_markdown),
+        "review_tasks": _build_review_tasks(evidence_markdown, run_markdown),
+        "obsidian_links": _obsidian_links(paths, vault_path),
+    }
+
+
+def _read_markdown_preview(path: str | None, *, limit: int = RUN_PREVIEW_LIMIT) -> str:
+    if not path:
+        return ""
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "\n\n[preview truncated]"
+
+
+def _parse_quality_gates(markdown: str) -> list[dict[str, str]]:
+    gates: list[dict[str, str]] = []
+    for raw_line in markdown.splitlines():
+        line = raw_line.strip()
+        if not line.startswith("|") or "---" in line or "status" in line.lower():
+            continue
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        if len(cells) < 3:
+            continue
+        status = cells[0].upper()
+        if status not in {"PASS", "WARN", "FAIL"}:
+            continue
+        gates.append({"status": status, "name": cells[1], "detail": cells[2]})
+    return gates
+
+
+def _build_review_tasks(evidence_markdown: str, run_markdown: str) -> list[dict[str, str]]:
+    tasks: list[dict[str, str]] = []
+    needs = _extract_markdown_section(evidence_markdown, "Needs Verification")
+    for line in needs.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- ") and "None captured yet" not in stripped:
+            tasks.append({"kind": "verify", "title": stripped[2:], "severity": "warn"})
+    for gate in _parse_quality_gates(run_markdown):
+        if gate["status"] in {"FAIL", "WARN"}:
+            tasks.append({"kind": "quality_gate", "title": f"{gate['name']}: {gate['detail']}", "severity": gate["status"].lower()})
+    if not tasks:
+        tasks.append({"kind": "review", "title": "Service Blueprint와 Evidence Ledger를 검토하고 유용한 노트를 reviewed로 승격하세요.", "severity": "ok"})
+    return tasks[:8]
+
+
+def _extract_markdown_section(markdown: str, heading: str) -> str:
+    marker = f"## {heading}"
+    start = markdown.find(marker)
+    if start == -1:
+        return ""
+    section_start = markdown.find("\n", start)
+    if section_start == -1:
+        return ""
+    next_heading = markdown.find("\n## ", section_start + 1)
+    if next_heading == -1:
+        return markdown[section_start:].strip()
+    return markdown[section_start:next_heading].strip()
+
+
+def _obsidian_links(paths: Mapping[str, Any], vault_path: Path) -> dict[str, str]:
+    links: dict[str, str] = {}
+    vault = vault_path.expanduser().resolve()
+    vault_name = vault.name
+    for key, value in paths.items():
+        if isinstance(value, list):
+            for index, item in enumerate(value, start=1):
+                link = _obsidian_link(vault, vault_name, str(item))
+                if link:
+                    links[f"{key}_{index}"] = link
+            continue
+        link = _obsidian_link(vault, vault_name, str(value))
+        if link:
+            links[key] = link
+    return links
+
+
+def _obsidian_link(vault: Path, vault_name: str, path: str) -> str:
+    if not path:
+        return ""
+    try:
+        relative = Path(path).expanduser().resolve().relative_to(vault).as_posix()
+    except (OSError, ValueError):
+        return ""
+    target = relative[:-3] if relative.endswith(".md") else relative
+    return "obsidian://open?" + parse.urlencode({"vault": vault_name, "file": target})
+
+
 _PORTAL_HTML = """<!doctype html>
 <html lang="ko">
 <head>
@@ -984,6 +1204,17 @@ _PORTAL_HTML = """<!doctype html>
           <span>주제</span>
           <textarea id="topicInput" rows="4" required placeholder="OpenAI Agents SDK와 LangGraph 비교"></textarea>
         </label>
+        <fieldset class="preset-field wide">
+          <legend>리서치 유형</legend>
+          <div class="preset-grid" id="presetButtons">
+            <button class="preset-button active" type="button" data-preset="architecture">IT 아키텍처</button>
+            <button class="preset-button" type="button" data-preset="paper">논문 합성</button>
+            <button class="preset-button" type="button" data-preset="standards">표준·보안</button>
+            <button class="preset-button" type="button" data-preset="market">시장 조사</button>
+            <button class="preset-button" type="button" data-preset="official-docs">공식 문서</button>
+          </div>
+          <div id="priorityPreview" class="priority-preview">official-docs → standards → papers</div>
+        </fieldset>
         <label class="field">
           <span>제공자</span>
           <select id="providerInput">
@@ -993,8 +1224,20 @@ _PORTAL_HTML = """<!doctype html>
           </select>
         </label>
         <label class="field">
+          <span>리서치 깊이</span>
+          <select id="depthInput">
+            <option value="quick">빠른 스캔</option>
+            <option value="standard" selected>표준 분석</option>
+            <option value="deep">심층 분석</option>
+          </select>
+        </label>
+        <label class="field">
           <span>출처당 논문 수</span>
           <input id="papersInput" type="number" min="1" max="10" value="2">
+        </label>
+        <label class="field">
+          <span>대상 도메인</span>
+          <input id="domainInput" type="text" placeholder="보안, ML, 클라우드">
         </label>
         <label class="switch">
           <input id="dryRunInput" type="checkbox" checked>
@@ -1003,6 +1246,10 @@ _PORTAL_HTML = """<!doctype html>
         <label class="switch">
           <input id="offlineInput" type="checkbox">
           <span>오프라인</span>
+        </label>
+        <label class="switch">
+          <input id="bilingualInput" type="checkbox" checked>
+          <span>원본/한글 병기</span>
         </label>
         <button id="runButton" class="primary" type="submit">실행 시작</button>
       </form>
@@ -1033,7 +1280,20 @@ _PORTAL_HTML = """<!doctype html>
 
     <section class="panel action-panel">
       <div class="section-head">
-        <h2>후속 작업</h2>
+        <h2>리서치 리뷰</h2>
+        <span id="reviewActionCount" class="badge">0</span>
+      </div>
+      <div id="reviewActionList" class="action-list">
+        <div class="action-row">
+          <p class="action-title">실행 결과를 기다리는 중입니다</p>
+          <div class="action-detail">완료된 run을 선택하면 검토할 근거와 품질 이슈가 표시됩니다.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel action-panel">
+      <div class="section-head">
+        <h2>Vault 정비</h2>
         <span id="actionCount" class="badge">0</span>
       </div>
       <div id="actionList" class="action-list">
@@ -1057,7 +1317,8 @@ _PORTAL_HTML = """<!doctype html>
         <h2>결과</h2>
         <span id="resultBadge" class="badge">대기</span>
       </div>
-      <pre id="resultOutput" class="result-output">선택된 실행이 없습니다.</pre>
+      <div id="progressSteps" class="progress-steps"></div>
+      <div id="resultOutput" class="result-output result-empty">선택된 실행이 없습니다.</div>
     </section>
   </main>
 
@@ -1364,6 +1625,51 @@ h2 {
   grid-column: 1 / -1;
 }
 
+.preset-field {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.preset-field legend {
+  padding: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+  gap: 8px;
+}
+
+.preset-button {
+  min-height: 44px;
+  padding: 0 10px;
+}
+
+.preset-button.active {
+  border-color: var(--accent);
+  background: var(--soft);
+  color: var(--accent-strong);
+}
+
+.priority-preview {
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 textarea,
 select,
 input {
@@ -1497,19 +1803,175 @@ button.primary:hover {
   font-size: 12px;
 }
 
-.result-output {
-  min-height: 260px;
-  max-height: 520px;
-  margin: 0;
-  padding: 14px;
-  overflow: auto;
+.progress-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.progress-step {
+  min-height: 44px;
+  padding: 9px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #101716;
-  color: #e8f2ee;
-  font-size: 13px;
+  background: #fbfcfa;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.progress-step.active {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.progress-step.done {
+  border-color: var(--good);
+  color: var(--good);
+  background: #f1f8f4;
+}
+
+.progress-step.fail {
+  border-color: var(--bad);
+  color: var(--bad);
+  background: #fff5f5;
+}
+
+.result-output {
+  min-height: 260px;
+  max-height: 680px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 14px;
   line-height: 1.55;
+}
+
+.result-empty,
+.json-fallback {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+  color: var(--muted);
   white-space: pre-wrap;
+}
+
+.result-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.result-summary {
+  display: grid;
+  gap: 10px;
+}
+
+.context-grid,
+.quality-grid,
+.artifact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.context-card,
+.quality-card,
+.artifact-link {
+  min-height: 72px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.context-card span,
+.quality-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.context-card strong,
+.quality-card strong {
+  display: block;
+  margin-top: 7px;
+  overflow-wrap: anywhere;
+}
+
+.quality-card.pass {
+  border-left: 4px solid var(--good);
+}
+
+.quality-card.ok {
+  border-left: 4px solid var(--good);
+}
+
+.quality-card.warn {
+  border-left: 4px solid var(--warn);
+}
+
+.quality-card.fail {
+  border-left: 4px solid var(--bad);
+}
+
+.artifact-link {
+  display: grid;
+  align-content: center;
+  color: var(--accent-strong);
+  font-weight: 800;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.markdown-preview {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.markdown-preview h3,
+.markdown-preview h4 {
+  margin: 16px 0 8px;
+}
+
+.markdown-preview h3:first-child,
+.markdown-preview h4:first-child {
+  margin-top: 0;
+}
+
+.markdown-preview p,
+.markdown-preview li {
+  color: var(--ink);
+}
+
+.markdown-preview pre {
+  overflow: auto;
+  padding: 12px;
+  border-radius: 8px;
+  background: #111817;
+  color: #edf7f3;
+}
+
+.markdown-preview table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.markdown-preview th,
+.markdown-preview td {
+  padding: 8px;
+  border: 1px solid var(--line);
+  text-align: left;
 }
 
 .ok {
@@ -1540,7 +2002,8 @@ button.primary:hover {
   }
 
   .status-grid,
-  .run-form {
+  .run-form,
+  .progress-steps {
     grid-template-columns: 1fr;
   }
 
@@ -1558,7 +2021,46 @@ button.primary:hover {
 _PORTAL_JS = """
 const state = {
   currentJobId: "",
-  pollTimer: null
+  pollTimer: null,
+  preset: "architecture"
+};
+
+const PRESETS = {
+  architecture: {
+    label: "IT 아키텍처",
+    depth: "standard",
+    papers: 2,
+    priority: ["official-docs", "standards", "papers", "engineering-articles", "general-web"],
+    placeholder: "OpenAI Agents SDK와 LangGraph 비교"
+  },
+  paper: {
+    label: "논문 합성",
+    depth: "deep",
+    papers: 5,
+    priority: ["papers", "standards", "official-docs", "engineering-articles", "general-web"],
+    placeholder: "Agentic RAG 최신 논문 구조 분류"
+  },
+  standards: {
+    label: "표준·보안",
+    depth: "standard",
+    papers: 2,
+    priority: ["standards", "official-docs", "papers", "engineering-articles", "general-web"],
+    placeholder: "AI Agent 보안 통제와 NIST/OWASP 기준"
+  },
+  market: {
+    label: "시장 조사",
+    depth: "quick",
+    papers: 1,
+    priority: ["general-web", "engineering-articles", "papers", "official-docs", "standards"],
+    placeholder: "엔터프라이즈 AI Agent 도입 동향"
+  },
+  "official-docs": {
+    label: "공식 문서",
+    depth: "quick",
+    papers: 1,
+    priority: ["official-docs", "standards", "papers", "engineering-articles", "general-web"],
+    placeholder: "OpenAI Responses API 최신 공식 문서 요약"
+  }
 };
 
 const el = (id) => document.getElementById(id);
@@ -1600,6 +2102,13 @@ function setBadge(id, text, status = "") {
 
 function printResult(label, value) {
   el("resultBadge").textContent = label;
+  if (value && typeof value === "object" && value.job_id) {
+    renderJobResult(value);
+    renderProgress(value);
+    renderReviewActions(value);
+    return;
+  }
+  el("resultOutput").className = "result-output json-fallback";
   el("resultOutput").textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
 }
 
@@ -1663,6 +2172,49 @@ async function refreshStatus() {
   await refreshJobs();
 }
 
+function renderReviewActions(job) {
+  const summary = job.summary || {};
+  const review = summary.review || {};
+  const tasks = Array.isArray(review.review_tasks) ? review.review_tasks : [];
+  el("reviewActionCount").textContent = String(tasks.length);
+  const list = el("reviewActionList");
+  if (!tasks.length) {
+    list.innerHTML = `
+      <div class="action-row">
+        <p class="action-title">검토 작업 없음</p>
+        <div class="action-detail">완료된 run을 선택하면 검토할 근거와 품질 이슈가 표시됩니다.</div>
+      </div>
+    `;
+    return;
+  }
+  list.innerHTML = tasks.map((task) => `
+    <div class="action-row priority-${task.severity === "fail" ? "1" : task.severity === "warn" ? "2" : ""}">
+      <p class="action-title">${escapeHtml(task.title || "검토 작업")}</p>
+      <div class="action-detail">${escapeHtml(task.kind || "review")} / ${escapeHtml(task.severity || "ok")}</div>
+    </div>
+  `).join("");
+}
+
+function renderProgress(job = {}) {
+  const status = job.status || "";
+  const done = status === "completed";
+  const failed = ["failed", "interrupted", "cancelled"].includes(status);
+  const steps = [
+    ["queued", "접수"],
+    ["collect", "소스·근거 수집"],
+    ["synthesis", "합성·저장"],
+    ["done", "완료"]
+  ];
+  el("progressSteps").innerHTML = steps.map(([key, label], index) => {
+    let klass = "";
+    if (done) klass = "done";
+    else if (failed && index === 3) klass = "fail";
+    else if (status === "queued" && index === 0) klass = "active";
+    else if (status === "running") klass = index === 0 ? "done" : index === 1 ? "active" : "";
+    return `<div class="progress-step ${klass}">${escapeHtml(label)}</div>`;
+  }).join("");
+}
+
 async function refreshJobStoreHealth() {
   try {
     const store = await requestJson("/job-store-health?retention_days=90&retention_limit=200&max_removed=5");
@@ -1717,9 +2269,166 @@ async function loadJob(jobId) {
     if (["queued", "running"].includes(job.status)) {
       startPolling();
     }
+    return job;
   } catch (error) {
     printResult("오류", error.payload || error.message);
   }
+  return null;
+}
+
+function renderJobResult(job) {
+  const summary = job.summary || {};
+  const review = summary.review || {};
+  if (job.status !== "completed") {
+    el("resultOutput").className = "result-output";
+    el("resultOutput").innerHTML = `
+      <div class="result-stack">
+        <div class="context-grid">
+          ${contextCard("상태", job.status)}
+          ${contextCard("모드", job.mode)}
+          ${contextCard("제공자", job.provider)}
+          ${contextCard("리서치 유형", job.research_type || "-")}
+        </div>
+        ${job.error ? `<div class="json-fallback">${escapeHtml(job.error.type || "Error")}: ${escapeHtml(job.error.message || "")}</div>` : ""}
+      </div>
+    `;
+    return;
+  }
+
+  if (summary.type === "dry_run") {
+    renderDryRunResult(job, summary);
+    return;
+  }
+
+  const context = summary.research_context || {};
+  const markdown = review.service_blueprint_markdown || "";
+  const quality = Array.isArray(review.quality_gates) ? review.quality_gates : [];
+  const links = review.obsidian_links || {};
+  el("resultOutput").className = "result-output";
+  el("resultOutput").innerHTML = `
+    <div class="result-stack">
+      <div class="context-grid">
+        ${contextCard("리서치 유형", context.research_type || job.research_type || "-")}
+        ${contextCard("깊이", context.research_depth || job.research_depth || "-")}
+        ${contextCard("제공자", job.provider)}
+        ${contextCard("Source Priority", (context.source_priority || job.source_priority || []).join(" → ") || "-")}
+      </div>
+      <div>
+        <h3>Quality Gate</h3>
+        <div class="quality-grid">${quality.length ? quality.map(qualityCard).join("") : contextCard("상태", "품질 게이트 정보 없음")}</div>
+      </div>
+      <div>
+        <h3>Obsidian 산출물</h3>
+        <div class="artifact-grid">${renderArtifactLinks(links, summary.paths || {})}</div>
+      </div>
+      <div>
+        <h3>Service Blueprint Preview</h3>
+        <div class="markdown-preview">${renderMarkdown(markdown || "Service Blueprint preview가 없습니다.")}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderDryRunResult(job, summary) {
+  const context = summary.research_context || {};
+  const artifacts = Array.isArray(summary.artifacts) ? summary.artifacts : [];
+  const safety = Array.isArray(summary.safety) ? summary.safety : [];
+  el("resultOutput").className = "result-output";
+  el("resultOutput").innerHTML = `
+    <div class="result-stack">
+      <div class="context-grid">
+        ${contextCard("드라이런", "파일 쓰기 없음")}
+        ${contextCard("리서치 유형", context.research_type || job.research_type || "-")}
+        ${contextCard("깊이", context.research_depth || job.research_depth || "-")}
+        ${contextCard("예상 산출물", artifacts.length)}
+      </div>
+      <div>
+        <h3>Safety Check</h3>
+        <div class="quality-grid">${safety.map((item) => qualityCard({ status: item.status, name: item.name, detail: item.detail })).join("")}</div>
+      </div>
+      <div>
+        <h3>Planned Artifacts</h3>
+        <div class="json-fallback">${escapeHtml(artifacts.map((item) => `${item.kind}: ${item.path}`).join("\\n") || "planned artifact 없음")}</div>
+      </div>
+    </div>
+  `;
+}
+
+function contextCard(label, value) {
+  return `<div class="context-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value ?? "-")}</strong></div>`;
+}
+
+function qualityCard(item) {
+  const status = String(item.status || "").toLowerCase();
+  return `
+    <div class="quality-card ${escapeHtml(status)}">
+      <span>${escapeHtml(item.status || "-")}</span>
+      <strong>${escapeHtml(item.name || "quality gate")}</strong>
+      <div class="action-detail">${escapeHtml(item.detail || "")}</div>
+    </div>
+  `;
+}
+
+function renderArtifactLinks(links, paths) {
+  const labels = {
+    run_note: "Run Note",
+    evidence_ledger: "Evidence Ledger",
+    service_blueprint: "Service Blueprint",
+    topic_map: "Topic Map"
+  };
+  const rows = Object.entries(labels).map(([key, label]) => {
+    if (links[key]) {
+      return `<a class="artifact-link" href="${escapeHtml(links[key])}">${escapeHtml(label)} 열기</a>`;
+    }
+    if (paths[key]) {
+      return `<div class="artifact-link">${escapeHtml(label)}<span class="action-detail">${escapeHtml(paths[key])}</span></div>`;
+    }
+    return "";
+  }).filter(Boolean);
+  return rows.join("") || `<div class="json-fallback">산출물 링크가 없습니다.</div>`;
+}
+
+function renderMarkdown(markdown) {
+  const lines = stripFrontmatter(String(markdown || "")).split("\\n");
+  const html = [];
+  let inCode = false;
+  let tableRows = [];
+  const flushTable = () => {
+    if (!tableRows.length) return;
+    html.push("<table>");
+    tableRows.forEach((row, index) => {
+      if (/^\\|\\s*-/.test(row)) return;
+      const cells = row.split("|").slice(1, -1).map((cell) => cell.trim());
+      const tag = index === 0 ? "th" : "td";
+      html.push(`<tr>${cells.map((cell) => `<${tag}>${escapeHtml(cell)}</${tag}>`).join("")}</tr>`);
+    });
+    html.push("</table>");
+    tableRows = [];
+  };
+  for (const line of lines) {
+    if (line.startsWith("```")) {
+      flushTable();
+      html.push(inCode ? "</code></pre>" : "<pre><code>");
+      inCode = !inCode;
+      continue;
+    }
+    if (inCode) {
+      html.push(`${escapeHtml(line)}\\n`);
+      continue;
+    }
+    if (line.startsWith("|")) {
+      tableRows.push(line);
+      continue;
+    }
+    flushTable();
+    if (line.startsWith("## ")) html.push(`<h4>${escapeHtml(line.slice(3))}</h4>`);
+    else if (line.startsWith("# ")) html.push(`<h3>${escapeHtml(line.slice(2))}</h3>`);
+    else if (line.startsWith("- ")) html.push(`<ul><li>${escapeHtml(line.slice(2))}</li></ul>`);
+    else if (line.trim()) html.push(`<p>${escapeHtml(line)}</p>`);
+  }
+  flushTable();
+  if (inCode) html.push("</code></pre>");
+  return html.join("");
 }
 
 function startPolling() {
@@ -1728,16 +2437,26 @@ function startPolling() {
   }
   state.pollTimer = setInterval(async () => {
     if (!state.currentJobId) return;
-    await loadJob(state.currentJobId);
+    const job = await loadJob(state.currentJobId);
     await refreshJobs();
+    if (job && !["queued", "running"].includes(job.status)) {
+      clearInterval(state.pollTimer);
+      state.pollTimer = null;
+    }
   }, 2000);
 }
 
 async function submitRun(event) {
   event.preventDefault();
+  const preset = PRESETS[state.preset] || PRESETS.architecture;
   const payload = {
     topic: el("topicInput").value.trim(),
     provider: el("providerInput").value,
+    research_type: state.preset,
+    research_depth: el("depthInput").value,
+    source_priority: preset.priority,
+    domain_focus: el("domainInput").value.trim(),
+    bilingual: el("bilingualInput").checked,
     offline: el("offlineInput").checked,
     dry_run: el("dryRunInput").checked,
     max_papers_per_source: Number(el("papersInput").value || 2)
@@ -1752,6 +2471,8 @@ async function submitRun(event) {
     });
     state.currentJobId = queued.job_id;
     printResult("대기열 등록", queued);
+    renderProgress(queued);
+    renderReviewActions(queued);
     await refreshJobs();
     await refreshJobStoreHealth();
     startPolling();
@@ -1760,6 +2481,29 @@ async function submitRun(event) {
   } finally {
     el("runButton").disabled = false;
   }
+}
+
+function applyPreset(name) {
+  state.preset = name;
+  const preset = PRESETS[name] || PRESETS.architecture;
+  el("depthInput").value = preset.depth;
+  el("papersInput").value = String(preset.papers);
+  el("priorityPreview").textContent = preset.priority.join(" → ");
+  el("topicInput").placeholder = preset.placeholder;
+  document.querySelectorAll(".preset-button").forEach((button) => {
+    button.classList.toggle("active", button.dataset.preset === name);
+  });
+}
+
+function stripFrontmatter(markdown) {
+  if (!markdown.startsWith("---\\n")) {
+    return markdown;
+  }
+  const end = markdown.indexOf("\\n---", 4);
+  if (end === -1) {
+    return markdown;
+  }
+  return markdown.slice(end + 4).trimStart();
 }
 
 function statusClass(status) {
@@ -1781,6 +2525,10 @@ function escapeHtml(value) {
 function init() {
   const storedToken = localStorage.getItem("researchAgentPortalToken") || "";
   el("tokenInput").value = storedToken;
+  document.querySelectorAll(".preset-button").forEach((button) => {
+    button.addEventListener("click", () => applyPreset(button.dataset.preset));
+  });
+  applyPreset(state.preset);
   el("runForm").addEventListener("submit", submitRun);
   el("refreshButton").addEventListener("click", refreshStatus);
   refreshStatus();

@@ -50,9 +50,14 @@ class PortalUISmokeScriptTests(unittest.TestCase):
         <form id="runForm">
           <textarea id="topicInput"></textarea>
           <select id="providerInput"></select>
+          <div id="presetButtons"></div>
+          <select id="depthInput"></select>
           <input id="dryRunInput">
           <input id="offlineInput">
-          <pre id="resultOutput"></pre>
+          <input id="bilingualInput">
+          <div id="resultOutput"></div>
+          <div id="reviewActionList"></div>
+          <div id="progressSteps"></div>
           <div id="jobList"></div>
           <strong id="jobStoreStatus"></strong>
           <div id="actionList"></div>
@@ -62,10 +67,16 @@ class PortalUISmokeScriptTests(unittest.TestCase):
         guide = """
         <h1>리서치 에이전트 포털 가이드</h1>
         <h2>가장 안전한 실행 순서</h2>
+        <h3>리서치 유형</h3>
+        <p>Quality Gate</p>
         <h2>Research Agent Portal과 PM Portal의 차이</h2>
         """
         js = """
         async function submitRun() {}
+        function applyPreset() {}
+        function renderJobResult() {}
+        function renderMarkdown() {}
+        function renderReviewActions() {}
         function startPolling() {}
         async function refreshJobs() {}
         async function refreshJobStoreHealth() {}

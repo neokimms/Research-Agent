@@ -66,6 +66,7 @@ class ResearchPipeline:
                 warnings=warnings,
             )
         ]
+        sources = self._sort_sources_by_priority(sources)
         provider = select_llm_provider(self.settings)
         evidence = extract_evidence(
             topic,
@@ -190,7 +191,9 @@ class ResearchPipeline:
         slug = slugify(topic)
 
         artifacts: list[PlannedArtifact] = []
-        sources = self._planned_sources(topic, offline=offline, max_papers_per_source=max_papers_per_source)
+        sources = self._sort_sources_by_priority(
+            self._planned_sources(topic, offline=offline, max_papers_per_source=max_papers_per_source)
+        )
         for index, source in enumerate(sources, start=1):
             filename = f"{date_prefix}_{slug}_source-{index:02d}.md"
             directory = self._source_directory(source)
@@ -364,11 +367,23 @@ class ResearchPipeline:
         offline: bool,
     ) -> str:
         if offline:
-            return render_fallback_blueprint(topic, sources, checked_at=checked_at, bilingual=self.settings.report.bilingual)
+            return render_fallback_blueprint(
+                topic,
+                sources,
+                checked_at=checked_at,
+                bilingual=self.settings.report.bilingual,
+                source_priority=self.settings.sources.priority,
+            )
 
         provider = select_llm_provider(self.settings)
         if not provider.available:
-            return render_fallback_blueprint(topic, sources, checked_at=checked_at, bilingual=self.settings.report.bilingual)
+            return render_fallback_blueprint(
+                topic,
+                sources,
+                checked_at=checked_at,
+                bilingual=self.settings.report.bilingual,
+                source_priority=self.settings.sources.priority,
+            )
 
         if provider.provider == "gemini":
             return self._synthesize_blueprint_with_gemini(topic, evidence_markdown, sources, checked_at, provider)
@@ -401,12 +416,24 @@ class ResearchPipeline:
                 "service blueprint synthesis failed; using fallback blueprint",
                 extra={"stage": "synthesize_blueprint", "provider": "openai", "topic": topic, "error": str(exc)},
             )
-            return render_fallback_blueprint(topic, sources, checked_at=checked_at, bilingual=self.settings.report.bilingual)
+            return render_fallback_blueprint(
+                topic,
+                sources,
+                checked_at=checked_at,
+                bilingual=self.settings.report.bilingual,
+                source_priority=self.settings.sources.priority,
+            )
         logger.warning(
             "service blueprint synthesis returned empty markdown; using fallback blueprint",
             extra={"stage": "synthesize_blueprint", "provider": "openai", "topic": topic},
         )
-        return render_fallback_blueprint(topic, sources, checked_at=checked_at, bilingual=self.settings.report.bilingual)
+        return render_fallback_blueprint(
+            topic,
+            sources,
+            checked_at=checked_at,
+            bilingual=self.settings.report.bilingual,
+            source_priority=self.settings.sources.priority,
+        )
 
     def _synthesize_blueprint_with_gemini(
         self,
@@ -435,12 +462,24 @@ class ResearchPipeline:
                 "service blueprint synthesis failed; using fallback blueprint",
                 extra={"stage": "synthesize_blueprint", "provider": "gemini", "topic": topic, "error": str(exc)},
             )
-            return render_fallback_blueprint(topic, sources, checked_at=checked_at, bilingual=self.settings.report.bilingual)
+            return render_fallback_blueprint(
+                topic,
+                sources,
+                checked_at=checked_at,
+                bilingual=self.settings.report.bilingual,
+                source_priority=self.settings.sources.priority,
+            )
         logger.warning(
             "service blueprint synthesis returned empty markdown; using fallback blueprint",
             extra={"stage": "synthesize_blueprint", "provider": "gemini", "topic": topic},
         )
-        return render_fallback_blueprint(topic, sources, checked_at=checked_at, bilingual=self.settings.report.bilingual)
+        return render_fallback_blueprint(
+            topic,
+            sources,
+            checked_at=checked_at,
+            bilingual=self.settings.report.bilingual,
+            source_priority=self.settings.sources.priority,
+        )
 
     def _model_for(self, provider: ProviderSelection, role: str) -> str:
         if provider.provider == "gemini":
@@ -459,9 +498,7 @@ checked_at: {yaml_scalar(checked_at)}
 status: draft
 confidence: medium
 source_priority:
-  - official-docs
-  - standards
-  - papers
+{self._source_priority_frontmatter()}
 generated_by: research-agent
 {self._language_frontmatter()}
 ---
@@ -478,6 +515,23 @@ generated_by: research-agent
         if source.source_type == "papers":
             return f"{source_dir}/papers"
         return f"{source_dir}/web"
+
+    def _sort_sources_by_priority(self, sources: list[SourceRecord]) -> list[SourceRecord]:
+        order = {source_type: index for index, source_type in enumerate(self.settings.sources.priority)}
+        fallback = len(order)
+        return [
+            source
+            for _, source in sorted(
+                enumerate(sources),
+                key=lambda item: (order.get(item[1].source_type, fallback), item[0]),
+            )
+        ]
+
+    def _source_priority_frontmatter(self) -> str:
+        priority = [item for item in self.settings.sources.priority if item.strip()]
+        if not priority:
+            priority = ["official-docs", "standards", "papers"]
+        return "\n".join(f"  - {yaml_scalar(item)}" for item in priority)
 
     def _language_frontmatter(self) -> str:
         if self.settings.report.bilingual:

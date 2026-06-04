@@ -80,7 +80,7 @@ class PipelineTests(unittest.TestCase):
                     standards_domains=[],
                     paper_sources=[],
                 ),
-                quality_gates=QualityGateSettings(),
+                quality_gates=QualityGateSettings(block_vault_write_on_fail=False),
             )
 
             with patch.dict("os.environ", {"GEMINI_API_KEY": "gemini-test-key"}, clear=True):
@@ -168,7 +168,7 @@ class PipelineTests(unittest.TestCase):
                     standards_domains=[],
                     paper_sources=[],
                 ),
-                quality_gates=QualityGateSettings(),
+                quality_gates=QualityGateSettings(block_vault_write_on_fail=False),
             )
 
             artifacts = ResearchPipeline(settings).run("agentic RAG rerun", offline=True, rerun_of="failed-source")
@@ -181,6 +181,28 @@ class PipelineTests(unittest.TestCase):
                 self.assertIn("- Re-run of portal job `failed-source`.", markdown)
                 self.assertIn("- 포털 작업 `failed-source`의 재실행입니다.", markdown)
 
+    def test_source_priority_orders_source_notes_and_blueprint_frontmatter(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            settings = Settings(
+                app=AppSettings(),
+                obsidian=ObsidianSettings(vault_path=Path(temp)),
+                openai=OpenAISettings(),
+                sources=SourceSettings(
+                    priority=["standards", "official-docs", "papers"],
+                    official_doc_domains=["developers.openai.com"],
+                    standards_domains=["nist.gov"],
+                    paper_sources=[],
+                ),
+                quality_gates=QualityGateSettings(min_official_sources=1, block_vault_write_on_fail=False),
+            )
+
+            artifacts = ResearchPipeline(settings).run("priority ordering", offline=True)
+
+            self.assertIn("10_Sources/standards", artifacts.source_notes[0])
+            self.assertIn("10_Sources/official-docs", artifacts.source_notes[1])
+            blueprint = Path(artifacts.service_blueprint).read_text(encoding="utf-8")
+            self.assertLess(blueprint.index('- "standards"'), blueprint.index('- "official-docs"'))
+
     def test_run_note_is_written_once_after_bilingual_audit(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             settings = Settings(
@@ -192,7 +214,7 @@ class PipelineTests(unittest.TestCase):
                     standards_domains=[],
                     paper_sources=[],
                 ),
-                quality_gates=QualityGateSettings(),
+                quality_gates=QualityGateSettings(block_vault_write_on_fail=False),
             )
             pipeline = ResearchPipeline(settings)
             original_write_note = pipeline.writer.write_note
@@ -220,7 +242,7 @@ class PipelineTests(unittest.TestCase):
                     standards_domains=[],
                     paper_sources=[],
                 ),
-                quality_gates=QualityGateSettings(),
+                quality_gates=QualityGateSettings(block_vault_write_on_fail=False),
                 report=ReportSettings(bilingual=False),
             )
 
@@ -244,7 +266,7 @@ class PipelineTests(unittest.TestCase):
                     standards_domains=[],
                     paper_sources=[],
                 ),
-                quality_gates=QualityGateSettings(min_official_sources=1),
+                quality_gates=QualityGateSettings(min_official_sources=1, block_vault_write_on_fail=False),
             )
 
             with patch.object(
@@ -340,7 +362,7 @@ class PipelineTests(unittest.TestCase):
                     standards_domains=[],
                     paper_sources=["crossref"],
                 ),
-                quality_gates=QualityGateSettings(min_official_sources=0),
+                quality_gates=QualityGateSettings(min_official_sources=0, block_vault_write_on_fail=False),
             )
 
             with patch("research_agent.collectors.search_crossref", side_effect=RuntimeError("rate limited")):

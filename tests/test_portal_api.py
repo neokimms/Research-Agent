@@ -22,7 +22,7 @@ def _settings(vault: Path) -> Settings:
             standards_domains=["nist.gov"],
             paper_sources=[],
         ),
-        quality_gates=QualityGateSettings(),
+        quality_gates=QualityGateSettings(block_vault_write_on_fail=False),
     )
 
 
@@ -47,6 +47,11 @@ class PortalAPITests(unittest.TestCase):
         self.assertIn("작업 저장소".encode("utf-8"), html.body)
         self.assertIn(b'id="runForm"', html.body)
         self.assertIn(b'id="providerInput"', html.body)
+        self.assertIn(b'id="presetButtons"', html.body)
+        self.assertIn(b'id="depthInput"', html.body)
+        self.assertIn(b'id="bilingualInput"', html.body)
+        self.assertIn(b'id="reviewActionList"', html.body)
+        self.assertIn(b'id="progressSteps"', html.body)
         self.assertIn(b'id="jobStoreStatus"', html.body)
         self.assertIn(b'id="actionList"', html.body)
         self.assertIn(b'href="/guide"', html.body)
@@ -54,15 +59,24 @@ class PortalAPITests(unittest.TestCase):
         self.assertIn("text/html", guide.content_type)
         self.assertIn("리서치 에이전트 포털 가이드".encode("utf-8"), guide.body)
         self.assertIn("가장 안전한 실행 순서".encode("utf-8"), guide.body)
+        self.assertIn("리서치 유형".encode("utf-8"), guide.body)
+        self.assertIn("Quality Gate".encode("utf-8"), guide.body)
         self.assertIn("Research Agent Portal과 PM Portal의 차이".encode("utf-8"), guide.body)
         self.assertEqual(css.status, 200)
         self.assertIn("text/css", css.content_type)
         self.assertIn(b".status-grid", css.body)
+        self.assertIn(b".preset-grid", css.body)
+        self.assertIn(b".progress-steps", css.body)
+        self.assertIn(b".markdown-preview", css.body)
         self.assertIn(b".action-list", css.body)
         self.assertIn(b".guide-page", css.body)
         self.assertEqual(js.status, 200)
         self.assertIn("application/javascript", js.content_type)
         self.assertIn(b"submitRun", js.body)
+        self.assertIn(b"applyPreset", js.body)
+        self.assertIn(b"renderJobResult", js.body)
+        self.assertIn(b"renderMarkdown", js.body)
+        self.assertIn(b"renderReviewActions", js.body)
         self.assertIn(b"renderNextActions", js.body)
         self.assertIn(b"refreshJobStoreHealth", js.body)
 
@@ -123,6 +137,11 @@ class PortalAPITests(unittest.TestCase):
                             "offline": True,
                             "provider": "gemini",
                             "max_papers_per_source": 3,
+                            "research_type": "paper",
+                            "research_depth": "deep",
+                            "source_priority": ["papers", "official-docs", "standards"],
+                            "domain_focus": "ML",
+                            "bilingual": False,
                             "rerun_of": "failed-source",
                         }
                     ).encode("utf-8"),
@@ -137,12 +156,22 @@ class PortalAPITests(unittest.TestCase):
         self.assertEqual(response.status, 202)
         self.assertEqual(queued["status_url"], "/jobs/job-001")
         self.assertEqual(queued["max_papers_per_source"], 3)
+        self.assertEqual(queued["research_type"], "paper")
+        self.assertEqual(queued["research_depth"], "deep")
+        self.assertEqual(queued["source_priority"], ["papers", "official-docs", "standards"])
+        self.assertEqual(queued["domain_focus"], "ML")
+        self.assertFalse(queued["bilingual"])
         self.assertEqual(queued["rerun_of"], "failed-source")
         self.assertNotIn("objective", queued)
         self.assertEqual(completed["status"], "completed")
         self.assertEqual(completed["mode"], "dry_run")
         self.assertEqual(completed["provider"], "gemini")
         self.assertEqual(completed["max_papers_per_source"], 3)
+        self.assertEqual(completed["summary"]["research_context"]["research_type"], "paper")
+        self.assertEqual(completed["summary"]["research_context"]["research_depth"], "deep")
+        self.assertEqual(completed["summary"]["research_context"]["source_priority"], ["papers", "official-docs", "standards"])
+        self.assertEqual(completed["summary"]["research_context"]["domain_focus"], "ML")
+        self.assertFalse(completed["summary"]["research_context"]["bilingual"])
         self.assertEqual(completed["rerun_of"], "failed-source")
         self.assertEqual(job_detail["objective"], "agentic RAG 구조 분류")
         self.assertEqual(job_detail["topic"], "agentic RAG 구조 분류")
@@ -153,6 +182,51 @@ class PortalAPITests(unittest.TestCase):
         self.assertEqual(run["objective"], "agentic RAG 구조 분류")
         self.assertEqual(run["rerun_of"], "failed-source")
         self.assertTrue(run["paths"]["planned_artifacts"])
+
+    def test_completed_live_run_includes_review_preview_and_obsidian_links(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            vault = Path(temp) / "vault"
+            vault.mkdir()
+            adapter = ResearchPortalAPIAdapter(
+                _settings(vault),
+                job_store_path=Path(temp) / "jobs.json",
+                job_id_factory=lambda: "job-002",
+            )
+            try:
+                response = adapter.handle_request(
+                    "/runs",
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                    body=json.dumps(
+                        {
+                            "topic": "official docs portal preview",
+                            "dry_run": False,
+                            "offline": True,
+                            "provider": "gemini",
+                            "research_type": "official-docs",
+                            "research_depth": "quick",
+                            "source_priority": ["official-docs", "standards", "papers"],
+                            "bilingual": False,
+                        }
+                    ).encode("utf-8"),
+                )
+                completed = adapter.wait_for_job("job-002", timeout_seconds=5.0)
+                blueprint_path = Path(completed["summary"]["paths"]["service_blueprint"])
+                blueprint_text = blueprint_path.read_text(encoding="utf-8")
+            finally:
+                adapter.close(wait=True)
+
+        self.assertEqual(response.status, 202)
+        self.assertEqual(completed["status"], "completed")
+        self.assertEqual(completed["mode"], "run")
+        self.assertEqual(completed["summary"]["type"], "run")
+        review = completed["summary"]["review"]
+        self.assertIn("Service Blueprint", review["service_blueprint_markdown"])
+        self.assertIsInstance(review["quality_gates"], list)
+        self.assertTrue(review["review_tasks"])
+        self.assertTrue(review["obsidian_links"]["service_blueprint"].startswith("obsidian://open?"))
+        self.assertIn("language: en", blueprint_text)
+        self.assertNotIn("translation_language: ko", blueprint_text)
 
     def test_vault_health_and_next_actions_are_json_serializable(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

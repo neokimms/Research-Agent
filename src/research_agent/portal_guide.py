@@ -26,11 +26,11 @@ def render_portal_guide_html() -> str:
   <main class="guide-page">
     <section class="guide-hero">
       <p class="eyebrow">무엇을 하는 도구인가요?</p>
-      <h2>IT 리서치를 실행하고, 결과를 Obsidian Vault에 저장하며, 후속 정리 작업까지 확인하는 포털입니다.</h2>
+      <h2>IT 리서치를 실행하고, 결과를 읽을 수 있는 리뷰 화면으로 확인한 뒤 Obsidian Vault에 저장하는 포털입니다.</h2>
       <p>
         이 포털은 공식 문서, 표준, 논문 중심의 Research Agent를 브라우저에서 실행하기 위한 화면입니다.
-        처음에는 안전하게 <strong>드라이런</strong>으로 planned artifact만 확인하고, 준비가 되면 live run으로 Obsidian에 source note,
-        evidence ledger, service blueprint, topic map, run log를 생성합니다.
+        리서치 유형 preset으로 출처 우선순위를 정하고, 완료 후에는 Service Blueprint 미리보기, Quality Gate,
+        리서치 리뷰 작업, Obsidian 산출물 링크를 한 화면에서 확인합니다.
       </p>
     </section>
 
@@ -41,6 +41,10 @@ def render_portal_guide_html() -> str:
       </div>
       <ol class="step-list">
         <li>
+          <strong>리서치 유형을 먼저 고릅니다.</strong>
+          <span>IT 아키텍처, 논문 합성, 표준·보안, 시장 조사, 공식 문서 중 하나를 선택하면 출처 우선순위와 기본 깊이가 맞춰집니다.</span>
+        </li>
+        <li>
           <strong>주제를 한 문장으로 입력합니다.</strong>
           <span>예: OpenAI Agents SDK와 LangGraph 비교, Agentic RAG 구조 분류와 실서비스 기본형.</span>
         </li>
@@ -49,16 +53,16 @@ def render_portal_guide_html() -> str:
           <span>드라이런은 Vault에 파일을 쓰지 않고 생성 예정 경로와 실행 계획만 보여줍니다.</span>
         </li>
         <li>
-          <strong>결과 패널에서 planned artifacts를 확인합니다.</strong>
-          <span>source note, evidence ledger, service blueprint, topic map, run log가 어떤 경로에 만들어질지 봅니다.</span>
+          <strong>결과 패널에서 계획 또는 산출물을 확인합니다.</strong>
+          <span>드라이런은 planned artifacts를, live run은 Service Blueprint preview, Quality Gate, Obsidian 링크를 보여줍니다.</span>
         </li>
         <li>
           <strong>실제 저장이 필요할 때만 드라이런을 끕니다.</strong>
           <span>live run은 Obsidian Vault에 Markdown 산출물을 씁니다. 처음 live run은 오프라인을 켜면 더 안전합니다.</span>
         </li>
         <li>
-          <strong>후속 작업 패널을 확인합니다.</strong>
-          <span>backlink proposal, cleanup, audit, review promotion처럼 다음 정리 작업이 있으면 명령과 함께 표시됩니다.</span>
+          <strong>리서치 리뷰와 Vault 정비를 나눠서 봅니다.</strong>
+          <span>리서치 리뷰는 근거/품질 검토용이고, Vault 정비는 backlink, cleanup, audit 같은 운영 작업입니다.</span>
         </li>
       </ol>
     </section>
@@ -71,7 +75,15 @@ def render_portal_guide_html() -> str:
       <div class="term-grid">
         <article>
           <h3>실행</h3>
-          <p>리서치 주제와 실행 옵션을 정하는 영역입니다. 입력한 주제는 Research Agent의 topic 또는 objective로 처리됩니다.</p>
+          <p>리서치 유형, 주제, 깊이, provider, bilingual 여부를 정하는 영역입니다. 입력한 주제는 topic 또는 objective로 처리됩니다.</p>
+        </article>
+        <article>
+          <h3>리서치 유형</h3>
+          <p>preset 버튼입니다. 논문 합성은 papers를 먼저 보고, IT 아키텍처와 공식 문서는 official-docs를 먼저 봅니다.</p>
+        </article>
+        <article>
+          <h3>리서치 깊이</h3>
+          <p>빠른 스캔, 표준 분석, 심층 분석을 고릅니다. 깊이에 따라 기본 논문 수가 달라지고, 필요하면 직접 조정할 수 있습니다.</p>
         </article>
         <article>
           <h3>제공자</h3>
@@ -86,7 +98,19 @@ def render_portal_guide_html() -> str:
           <p>LLM/API 수집을 건너뛰고 내장 fallback으로 산출물을 만듭니다. UI와 Obsidian writer 검증에 좋습니다.</p>
         </article>
         <article>
-          <h3>후속 작업</h3>
+          <h3>원본/한글 병기</h3>
+          <p>켜면 Service Blueprint와 Source Note에 원문과 한국어 번역을 함께 남깁니다. 끄면 영어 중심 산출물로 토큰과 노트 길이를 줄입니다.</p>
+        </article>
+        <article>
+          <h3>결과</h3>
+          <p>raw JSON 대신 사람이 읽을 수 있는 리뷰 화면입니다. Quality Gate, Obsidian 링크, Service Blueprint preview를 확인합니다.</p>
+        </article>
+        <article>
+          <h3>리서치 리뷰</h3>
+          <p>근거 부족, 품질 gate 경고, reviewed 승격처럼 전문가가 판단해야 할 다음 행동을 보여줍니다.</p>
+        </article>
+        <article>
+          <h3>Vault 정비</h3>
           <p><code>/next-actions</code> 결과입니다. backlink, source audit, bilingual audit, cleanup 같은 Vault 운영 작업을 보여줍니다.</p>
         </article>
         <article>
@@ -109,8 +133,18 @@ def render_portal_guide_html() -> str:
         </div>
         <div class="scenario-row">
           <span>처음 UI 확인</span>
-          <span>드라이런 ON, 오프라인 ON, provider auto</span>
+          <span>IT 아키텍처, 드라이런 ON, 오프라인 ON, provider auto</span>
           <span>결과 패널의 planned artifacts, job 상태 completed</span>
+        </div>
+        <div class="scenario-row">
+          <span>논문 중심 구조 분류</span>
+          <span>논문 합성, 심층 분석, 원본/한글 병기 ON</span>
+          <span>papers 우선 source note, Evidence Ledger의 Needs Verification</span>
+        </div>
+        <div class="scenario-row">
+          <span>표준·보안 검토</span>
+          <span>표준·보안, 표준 분석, provider auto</span>
+          <span>Quality Gate PASS/WARN, 표준 출처와 공식 문서 근거</span>
         </div>
         <div class="scenario-row">
           <span>실제 Vault 저장 리허설</span>
@@ -119,8 +153,8 @@ def render_portal_guide_html() -> str:
         </div>
         <div class="scenario-row">
           <span>실사용 리서치</span>
-          <span>드라이런 OFF, 오프라인 OFF, provider auto</span>
-          <span>공식 문서/표준/논문 기반 source note와 synthesis 산출물</span>
+          <span>주제에 맞는 preset, 드라이런 OFF, 오프라인 OFF, provider auto</span>
+          <span>Service Blueprint preview, Obsidian 산출물 링크, 리서치 리뷰 작업</span>
         </div>
         <div class="scenario-row">
           <span>실패 job 재실행</span>
