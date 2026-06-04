@@ -203,6 +203,34 @@ class PipelineTests(unittest.TestCase):
             blueprint = Path(artifacts.service_blueprint).read_text(encoding="utf-8")
             self.assertLess(blueprint.index('- "standards"'), blueprint.index('- "official-docs"'))
 
+    def test_offline_run_uses_selected_market_report_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            settings = Settings(
+                app=AppSettings(),
+                obsidian=ObsidianSettings(vault_path=Path(temp)),
+                openai=OpenAISettings(),
+                sources=SourceSettings(
+                    official_doc_domains=["developers.openai.com", "docs.langchain.com"],
+                    standards_domains=["nist.gov"],
+                    paper_sources=[],
+                ),
+                quality_gates=QualityGateSettings(),
+            )
+
+            artifacts = ResearchPipeline(settings).run(
+                "AI coding tools",
+                offline=True,
+                research_type="market",
+                domain_focus="developer productivity",
+            )
+
+            blueprint = Path(artifacts.service_blueprint).read_text(encoding="utf-8")
+            self.assertIn('research_type: "market"', blueprint)
+            self.assertIn("# AI coding tools Market Research Report", blueprint)
+            self.assertIn("## Market Landscape", blueprint)
+            self.assertIn("## Vendor And Product Map", blueprint)
+            self.assertIn("## Opportunity Hypotheses", blueprint)
+
     def test_run_note_is_written_once_after_bilingual_audit(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             settings = Settings(

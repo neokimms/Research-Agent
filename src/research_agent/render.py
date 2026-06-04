@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 from .models import EvidenceBundle, EvidenceClaim, QualityGateResult, RunWarning, SourceRecord
+from .report_profiles import ReportProfile, SectionTemplate, get_report_profile
 from .textutil import yaml_scalar
 
 
@@ -223,17 +224,21 @@ def render_fallback_blueprint(
     checked_at: str,
     bilingual: bool = True,
     source_priority: list[str] | None = None,
+    research_type: str | None = None,
 ) -> str:
+    profile = get_report_profile(research_type)
     source_lines = "\n".join(
         f"- [{source.title}]({source.url or source.canonical_url}) ({source.source_type})"
         if source.url or source.canonical_url
         else f"- {source.title} ({source.source_type})"
         for source in sources
     ) or "- No sources collected yet."
+    sections = _fallback_profile_sections(profile, source_lines=source_lines, bilingual=bilingual)
 
     return f"""---
 type: service-blueprint
 topic: {yaml_scalar(topic)}
+research_type: {yaml_scalar(profile.key)}
 created_at: {yaml_scalar(checked_at)}
 checked_at: {yaml_scalar(checked_at)}
 status: draft
@@ -244,46 +249,70 @@ generated_by: research-agent
 {_language_frontmatter(bilingual)}
 ---
 
-# {topic} Service Blueprint
+# {topic} {profile.report_title}
 
-## One-Line Conclusion
-
-{_localized_block("Use an Obsidian-first workflow where the agent gathers evidence, writes source notes, creates an evidence ledger, and drafts a service blueprint for human review.", bilingual=bilingual)}
-
-## When To Use
-
-{_localized_block("- When source freshness and traceability matter.\n- When official documentation, standards, and papers should outrank general web summaries.\n- When the final artifact must remain readable and editable in Obsidian.", bilingual=bilingual)}
-
-## Structure Classification
-
-{_localized_block("- Source-first research workflow\n- Evidence-led synthesis\n- Human-reviewed knowledge base", bilingual=bilingual)}
-
-## Recommended Baseline
-
-{_fallback_baseline_block(bilingual=bilingual)}
-
-## Implementation Order
-
-{_localized_block("1. Configure the Obsidian vault path.\n2. Collect official docs, standards, and paper metadata.\n3. Generate source notes and an evidence ledger.\n4. Use OpenAI synthesis only after local evidence is assembled.\n5. Review and promote draft notes inside Obsidian.", bilingual=bilingual)}
-
-## Operational Risks
-
-{_localized_block("- Stale documentation\n- Weak source metadata\n- Overwriting reviewed notes\n- Treating generated synthesis as verified fact", bilingual=bilingual)}
-
-## Verification
-
-{_localized_block("- Check that every claim has a source URL.\n- Check publication and update dates.\n- Keep uncertain claims in the uncertainty section.", bilingual=bilingual)}
-
-## Evidence
-
-{source_lines}
-
-## Still Uncertain
-
-{_localized_block("- Exact source pages and paper metadata need human review.", bilingual=bilingual)}
-
-## Related Notes
+{sections}
 """
+
+
+def _fallback_profile_sections(profile: ReportProfile, *, source_lines: str, bilingual: bool) -> str:
+    rendered: list[str] = []
+    for section in profile.required_sections:
+        if section == "Evidence":
+            content = source_lines
+        elif profile.key == "architecture" and section == "One-Line Conclusion":
+            content = _localized_block(
+                "Use an Obsidian-first workflow where the agent gathers evidence, writes source notes, creates an evidence ledger, and drafts a service blueprint for human review.",
+                bilingual=bilingual,
+            )
+        elif profile.key == "architecture" and section == "When To Use":
+            content = _localized_block(
+                "- When source freshness and traceability matter.\n- When official documentation, standards, and papers should outrank general web summaries.\n- When the final artifact must remain readable and editable in Obsidian.",
+                bilingual=bilingual,
+            )
+        elif profile.key == "architecture" and section == "Structure Classification":
+            content = _localized_block(
+                "- Source-first research workflow\n- Evidence-led synthesis\n- Human-reviewed knowledge base",
+                bilingual=bilingual,
+            )
+        elif profile.key == "architecture" and section == "Recommended Baseline":
+            content = _fallback_baseline_block(bilingual=bilingual)
+        elif profile.key == "architecture" and section == "Implementation Order":
+            content = _localized_block(
+                "1. Configure the Obsidian vault path.\n2. Collect official docs, standards, and paper metadata.\n3. Generate source notes and an evidence ledger.\n4. Use OpenAI synthesis only after local evidence is assembled.\n5. Review and promote draft notes inside Obsidian.",
+                bilingual=bilingual,
+            )
+        elif profile.key == "architecture" and section == "Operational Risks":
+            content = _localized_block(
+                "- Stale documentation\n- Weak source metadata\n- Overwriting reviewed notes\n- Treating generated synthesis as verified fact",
+                bilingual=bilingual,
+            )
+        elif profile.key == "architecture" and section == "Verification":
+            content = _localized_block(
+                "- Check that every claim has a source URL.\n- Check publication and update dates.\n- Keep uncertain claims in the uncertainty section.",
+                bilingual=bilingual,
+            )
+        elif profile.key == "architecture" and section == "Still Uncertain":
+            content = _localized_block(
+                "- Exact source pages and paper metadata need human review.",
+                bilingual=bilingual,
+            )
+        else:
+            content = _section_template_block(profile.template_for(section), bilingual=bilingual)
+        rendered.append(f"## {section}\n\n{content}")
+    return "\n\n".join(rendered)
+
+
+def _section_template_block(template: SectionTemplate, *, bilingual: bool) -> str:
+    if bilingual and template.korean.strip():
+        return f"""**원본**
+
+{template.original.strip()}
+
+**한국어 번역**
+
+{template.korean.strip()}"""
+    return _localized_block(template.original, bilingual=bilingual)
 
 
 def _source_priority_frontmatter(source_priority: list[str] | None) -> str:

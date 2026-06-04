@@ -146,6 +146,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--dry-run", action="store_true", help="Preview planned artifacts without writing files or calling APIs.")
     run.add_argument("--provider", choices=["auto", "openai", "gemini"], default=None, dest="provider_after", help="Override LLM provider selection.")
     run.add_argument("--max-papers-per-source", type=int, default=2, help="Paper records to request per paper source.")
+    run.add_argument("--research-type", choices=["architecture", "paper", "market"], default="architecture", help="Report profile for generated synthesis.")
     run.set_defaults(func=_run)
 
     index_vault = subparsers.add_parser("index-vault", help="Index the Obsidian vault and write backlink suggestions.")
@@ -403,6 +404,7 @@ def _run(args: argparse.Namespace, settings) -> int:
         args.topic,
         offline=args.offline,
         max_papers_per_source=args.max_papers_per_source,
+        research_type=args.research_type,
     )
     print("Research run complete")
     print(f"Run note: {artifacts.run_note}")

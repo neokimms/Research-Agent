@@ -2,49 +2,43 @@ from __future__ import annotations
 
 import re
 
+from .report_profiles import get_report_profile, section_default_text
 
-REQUIRED_BLUEPRINT_SECTIONS = [
-    "One-Line Conclusion",
-    "When To Use",
-    "Structure Classification",
-    "Recommended Baseline",
-    "Implementation Order",
-    "Operational Risks",
-    "Verification",
-    "Evidence",
-    "Still Uncertain",
-    "Related Notes",
-]
+REQUIRED_BLUEPRINT_SECTIONS = list(get_report_profile("architecture").required_sections)
 
 
 DEFAULT_SECTION_TEXT = {
-    "One-Line Conclusion": "TBD after reviewing the evidence ledger.",
-    "When To Use": "- TBD after reviewing the evidence ledger.",
-    "Structure Classification": "- TBD after reviewing the evidence ledger.",
-    "Recommended Baseline": "```text\nTBD\n```",
-    "Implementation Order": "1. Review the evidence ledger.\n2. Confirm source quality.\n3. Promote the note after human review.",
-    "Operational Risks": "- Stale or weakly verified sources.",
-    "Verification": "- Check every important claim against the evidence ledger.",
-    "Evidence": "- See the generated evidence ledger.",
-    "Still Uncertain": "- Add unresolved questions during review.",
-    "Related Notes": "- TBD",
+    section: section_default_text(section, research_type="architecture")
+    for section in REQUIRED_BLUEPRINT_SECTIONS
 }
 
 
-def stabilize_service_blueprint(markdown: str, *, topic: str, bilingual: bool = True) -> str:
+def required_blueprint_sections(research_type: str | None = None) -> list[str]:
+    return list(get_report_profile(research_type).required_sections)
+
+
+def stabilize_service_blueprint(
+    markdown: str,
+    *,
+    topic: str,
+    bilingual: bool = True,
+    research_type: str | None = None,
+) -> str:
+    profile = get_report_profile(research_type)
+    required_sections = list(profile.required_sections)
     frontmatter, body = _split_frontmatter(markdown.strip())
     if not body:
-        body = f"# {topic} Service Blueprint\n"
+        body = f"# {topic} {profile.report_title}\n"
 
     if not _has_h1(body):
-        body = f"# {topic} Service Blueprint\n\n{body.lstrip()}"
+        body = f"# {topic} {profile.report_title}\n\n{body.lstrip()}"
 
-    present_sections = [section for section in REQUIRED_BLUEPRINT_SECTIONS if _has_heading(body, section)]
+    present_sections = [section for section in required_sections if _has_heading(body, section)]
     default_filled_sections: list[str] = []
-    for section in REQUIRED_BLUEPRINT_SECTIONS:
+    for section in required_sections:
         if not _has_heading(body, section):
             default_filled_sections.append(section)
-            body = body.rstrip() + f"\n\n## {section}\n\n{DEFAULT_SECTION_TEXT[section]}\n"
+            body = body.rstrip() + f"\n\n## {section}\n\n{profile.template_for(section).original}\n"
 
     if not _has_heading(body, "Synthesis Coverage"):
         body = _insert_before_heading(

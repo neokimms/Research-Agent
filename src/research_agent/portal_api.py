@@ -19,6 +19,7 @@ from .doctor import run_doctor
 from .next_actions import build_next_actions
 from .pipeline import ResearchPipeline
 from .portal_guide import render_portal_guide_html
+from .report_profiles import normalize_research_type
 from .secrets import select_llm_provider
 from .timeutil import now_local
 from .vault_health import build_vault_health
@@ -514,14 +515,16 @@ class ResearchPortalAPIAdapter:
             return _json_response(400, {"error": "invalid_provider", "allowed": ["auto", "openai", "gemini"]})
         offline = bool(payload.get("offline", False))
         dry_run = bool(payload.get("dry_run", False))
-        research_type = str(payload.get("research_type") or "architecture").strip().lower()
-        _VALID_RESEARCH_TYPES = {"architecture", "paper", "papers", "standards", "market", "official-docs"}
-        if research_type not in _VALID_RESEARCH_TYPES:
-            research_type = "architecture"
+        raw_research_type = str(payload.get("research_type") or "architecture").strip().lower()
+        valid_research_types = {"architecture", "paper", "papers", "standards", "market", "official-docs"}
+        if raw_research_type not in valid_research_types:
+            raw_research_type = "architecture"
+        research_type = "paper" if raw_research_type == "papers" else raw_research_type
+        report_profile = normalize_research_type(research_type)
         research_depth = str(payload.get("research_depth") or "standard").strip().lower()
         if research_depth not in {"quick", "standard", "deep"}:
             return _json_response(400, {"error": "invalid_research_depth", "allowed": ["quick", "standard", "deep"]})
-        source_priority = _normalize_source_priority(payload.get("source_priority"), research_type=research_type)
+        source_priority = _normalize_source_priority(payload.get("source_priority"), research_type=raw_research_type)
         domain_focus = str(payload.get("domain_focus") or "").strip()[:240]
         bilingual = _optional_bool(payload.get("bilingual"))
         max_papers = _positive_int(
@@ -565,6 +568,7 @@ class ResearchPortalAPIAdapter:
                 max_papers,
                 rerun_of,
                 research_type,
+                report_profile,
                 research_depth,
                 source_priority,
                 domain_focus,
@@ -584,6 +588,7 @@ class ResearchPortalAPIAdapter:
         max_papers_per_source: int,
         rerun_of: str | None,
         research_type: str,
+        report_profile: str,
         research_depth: str,
         source_priority: list[str],
         domain_focus: str,
@@ -603,6 +608,7 @@ class ResearchPortalAPIAdapter:
             )
             research_context = {
                 "research_type": research_type,
+                "report_profile": report_profile,
                 "research_depth": research_depth,
                 "source_priority": source_priority,
                 "domain_focus": domain_focus,
@@ -630,6 +636,7 @@ class ResearchPortalAPIAdapter:
                     max_papers_per_source=max_papers_per_source,
                     rerun_of=rerun_of,
                     domain_focus=domain_focus,
+                    research_type=report_profile,
                     on_stage=lambda stage: self._update_job_stage(job_id, stage),
                 )
                 summary = {

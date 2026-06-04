@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from research_agent.blueprint import REQUIRED_BLUEPRINT_SECTIONS, stabilize_service_blueprint
+from research_agent.blueprint import REQUIRED_BLUEPRINT_SECTIONS, required_blueprint_sections, stabilize_service_blueprint
 
 
 class BlueprintTests(unittest.TestCase):
@@ -35,6 +35,33 @@ class BlueprintTests(unittest.TestCase):
 
         self.assertIn("## Synthesis Coverage", markdown)
         self.assertNotIn("**한국어 번역**", markdown)
+
+    def test_stabilize_service_blueprint_uses_paper_profile_sections(self) -> None:
+        markdown = stabilize_service_blueprint(
+            "A short answer.",
+            topic="LLM evaluation papers",
+            research_type="paper",
+            bilingual=False,
+        )
+
+        self.assertIn("# LLM evaluation papers Paper Analysis Report", markdown)
+        for section in ["Paper Corpus", "Methodology Comparison", "Reproducibility Notes", "Open Problems"]:
+            self.assertIn(f"## {section}", markdown)
+        self.assertNotIn("## Implementation Order", markdown)
+        self.assertEqual(required_blueprint_sections("papers"), required_blueprint_sections("paper"))
+
+    def test_stabilize_service_blueprint_uses_market_profile_sections(self) -> None:
+        markdown = stabilize_service_blueprint(
+            "A short answer.",
+            topic="AI coding tools",
+            research_type="market",
+            bilingual=False,
+        )
+
+        self.assertIn("# AI coding tools Market Research Report", markdown)
+        for section in ["Market Landscape", "Vendor And Product Map", "Pricing And Packaging Signals", "Opportunity Hypotheses"]:
+            self.assertIn(f"## {section}", markdown)
+        self.assertNotIn("## Verification", markdown)
 
 
 if __name__ == "__main__":

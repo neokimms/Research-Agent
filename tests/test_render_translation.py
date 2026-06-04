@@ -102,6 +102,36 @@ question
         self.assertNotIn("translation_language: ko", markdown)
         self.assertNotIn("**한국어 번역**", markdown)
 
+    def test_fallback_blueprint_uses_paper_profile(self) -> None:
+        markdown = render_fallback_blueprint(
+            "LLM evaluation papers",
+            [SourceRecord("Benchmark paper", "https://arxiv.org/abs/1234.5678", "papers")],
+            checked_at="2026-06-03",
+            research_type="paper",
+        )
+
+        self.assertIn('research_type: "paper"', markdown)
+        self.assertIn("# LLM evaluation papers Paper Analysis Report", markdown)
+        self.assertIn("## Paper Corpus", markdown)
+        self.assertIn("## Methodology Comparison", markdown)
+        self.assertIn("## Reproducibility Notes", markdown)
+        self.assertIn("**한국어 번역**", markdown)
+
+    def test_fallback_blueprint_uses_market_profile(self) -> None:
+        markdown = render_fallback_blueprint(
+            "AI coding tools",
+            [SourceRecord("Vendor page", "https://example.com/product", "general-web")],
+            checked_at="2026-06-03",
+            research_type="market",
+            bilingual=False,
+        )
+
+        self.assertIn('research_type: "market"', markdown)
+        self.assertIn("# AI coding tools Market Research Report", markdown)
+        self.assertIn("## Market Landscape", markdown)
+        self.assertIn("## Pricing And Packaging Signals", markdown)
+        self.assertNotIn("**한국어 번역**", markdown)
+
 
 if __name__ == "__main__":
     unittest.main()

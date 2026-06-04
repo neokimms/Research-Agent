@@ -16,6 +16,7 @@ from .openai_client import OpenAIError, OpenAIResponsesClient, output_text
 from .prompts import synthesis_instructions, synthesis_prompt
 from .quality import FAIL, evaluate_quality_gates
 from .render import render_evidence_ledger, render_evidence_synthesis_context, render_fallback_blueprint, render_run_note, render_source_note, render_topic_map
+from .report_profiles import normalize_research_type
 from .secrets import ProviderSelection, select_llm_provider
 from .textutil import slugify, yaml_scalar
 from .timeutil import now_local
@@ -49,9 +50,11 @@ class ResearchPipeline:
         max_papers_per_source: int = 2,
         rerun_of: str | None = None,
         domain_focus: str = "",
+        research_type: str | None = None,
         on_stage: object = None,
     ) -> RunArtifacts:
         _validate_topic(topic)
+        normalized_research_type = normalize_research_type(research_type)
         timestamp = now_local(self.settings.app.timezone)
         checked_at = timestamp.date().isoformat()
         date_prefix = timestamp.strftime("%Y-%m-%d")
@@ -95,6 +98,7 @@ class ResearchPipeline:
         blueprint_markdown = self._synthesize_blueprint(
             topic, evidence_markdown_for_synthesis, sources, checked_at, offline,
             domain_focus=domain_focus,
+            research_type=normalized_research_type,
         )
         quality_gates = evaluate_quality_gates(
             self.settings.quality_gates,
@@ -394,7 +398,9 @@ class ResearchPipeline:
         offline: bool,
         *,
         domain_focus: str = "",
+        research_type: str | None = None,
     ) -> str:
+        normalized_research_type = normalize_research_type(research_type)
         if offline:
             return render_fallback_blueprint(
                 topic,
@@ -402,6 +408,7 @@ class ResearchPipeline:
                 checked_at=checked_at,
                 bilingual=self.settings.report.bilingual,
                 source_priority=self.settings.sources.priority,
+                research_type=normalized_research_type,
             )
 
         provider = select_llm_provider(self.settings)
@@ -412,14 +419,27 @@ class ResearchPipeline:
                 checked_at=checked_at,
                 bilingual=self.settings.report.bilingual,
                 source_priority=self.settings.sources.priority,
+                research_type=normalized_research_type,
             )
 
         if provider.provider == "gemini":
             return self._synthesize_blueprint_with_gemini(
-                topic, evidence_markdown, sources, checked_at, provider, domain_focus=domain_focus
+                topic,
+                evidence_markdown,
+                sources,
+                checked_at,
+                provider,
+                domain_focus=domain_focus,
+                research_type=normalized_research_type,
             )
         return self._synthesize_blueprint_with_openai(
-            topic, evidence_markdown, sources, checked_at, provider, domain_focus=domain_focus
+            topic,
+            evidence_markdown,
+            sources,
+            checked_at,
+            provider,
+            domain_focus=domain_focus,
+            research_type=normalized_research_type,
         )
 
     def _synthesize_blueprint_with_openai(
@@ -431,7 +451,9 @@ class ResearchPipeline:
         provider: ProviderSelection,
         *,
         domain_focus: str = "",
+        research_type: str | None = None,
     ) -> str:
+        normalized_research_type = normalize_research_type(research_type)
         client = OpenAIResponsesClient(
             api_key=provider.api_key or "",
             default_model=self.settings.openai.models.synthesis,
@@ -442,17 +464,29 @@ class ResearchPipeline:
                     topic, evidence_markdown,
                     bilingual=self.settings.report.bilingual,
                     domain_focus=domain_focus,
+                    research_type=normalized_research_type,
                 ),
                 instructions=synthesis_instructions(
                     bilingual=self.settings.report.bilingual,
                     domain_focus=domain_focus,
+                    research_type=normalized_research_type,
                 ),
                 reasoning_effort="medium",
             )
             markdown = output_text(response)
             if markdown.strip():
-                stable_markdown = stabilize_service_blueprint(markdown, topic=topic, bilingual=self.settings.report.bilingual)
-                return self._with_frontmatter(topic, stable_markdown, checked_at=checked_at)
+                stable_markdown = stabilize_service_blueprint(
+                    markdown,
+                    topic=topic,
+                    bilingual=self.settings.report.bilingual,
+                    research_type=normalized_research_type,
+                )
+                return self._with_frontmatter(
+                    topic,
+                    stable_markdown,
+                    checked_at=checked_at,
+                    research_type=normalized_research_type,
+                )
         except OpenAIError as exc:
             logger.warning(
                 "service blueprint synthesis failed; using fallback blueprint",
@@ -464,6 +498,7 @@ class ResearchPipeline:
                 checked_at=checked_at,
                 bilingual=self.settings.report.bilingual,
                 source_priority=self.settings.sources.priority,
+                research_type=normalized_research_type,
             )
         logger.warning(
             "service blueprint synthesis returned empty markdown; using fallback blueprint",
@@ -475,6 +510,7 @@ class ResearchPipeline:
             checked_at=checked_at,
             bilingual=self.settings.report.bilingual,
             source_priority=self.settings.sources.priority,
+            research_type=normalized_research_type,
         )
 
     def _synthesize_blueprint_with_gemini(
@@ -486,7 +522,9 @@ class ResearchPipeline:
         provider: ProviderSelection,
         *,
         domain_focus: str = "",
+        research_type: str | None = None,
     ) -> str:
+        normalized_research_type = normalize_research_type(research_type)
         client = GeminiGenerateClient(
             api_key=provider.api_key or "",
             default_model=self.settings.gemini.models.synthesis,
@@ -497,17 +535,29 @@ class ResearchPipeline:
                     topic, evidence_markdown,
                     bilingual=self.settings.report.bilingual,
                     domain_focus=domain_focus,
+                    research_type=normalized_research_type,
                 ),
                 instructions=synthesis_instructions(
                     bilingual=self.settings.report.bilingual,
                     domain_focus=domain_focus,
+                    research_type=normalized_research_type,
                 ),
                 model=self.settings.gemini.models.synthesis,
             )
             markdown = gemini_output_text(response)
             if markdown.strip():
-                stable_markdown = stabilize_service_blueprint(markdown, topic=topic, bilingual=self.settings.report.bilingual)
-                return self._with_frontmatter(topic, stable_markdown, checked_at=checked_at)
+                stable_markdown = stabilize_service_blueprint(
+                    markdown,
+                    topic=topic,
+                    bilingual=self.settings.report.bilingual,
+                    research_type=normalized_research_type,
+                )
+                return self._with_frontmatter(
+                    topic,
+                    stable_markdown,
+                    checked_at=checked_at,
+                    research_type=normalized_research_type,
+                )
         except GeminiError as exc:
             logger.warning(
                 "service blueprint synthesis failed; using fallback blueprint",
@@ -519,6 +569,7 @@ class ResearchPipeline:
                 checked_at=checked_at,
                 bilingual=self.settings.report.bilingual,
                 source_priority=self.settings.sources.priority,
+                research_type=normalized_research_type,
             )
         logger.warning(
             "service blueprint synthesis returned empty markdown; using fallback blueprint",
@@ -530,6 +581,7 @@ class ResearchPipeline:
             checked_at=checked_at,
             bilingual=self.settings.report.bilingual,
             source_priority=self.settings.sources.priority,
+            research_type=normalized_research_type,
         )
 
     def _model_for(self, provider: ProviderSelection, role: str) -> str:
@@ -537,13 +589,22 @@ class ResearchPipeline:
             return str(getattr(self.settings.gemini.models, role))
         return str(getattr(self.settings.openai.models, role))
 
-    def _with_frontmatter(self, topic: str, markdown: str, *, checked_at: str) -> str:
+    def _with_frontmatter(
+        self,
+        topic: str,
+        markdown: str,
+        *,
+        checked_at: str,
+        research_type: str | None = None,
+    ) -> str:
         body = markdown.strip()
         if body.startswith("---\n"):
             return body
+        normalized_research_type = normalize_research_type(research_type)
         return f"""---
 type: service-blueprint
 topic: {yaml_scalar(topic)}
+research_type: {yaml_scalar(normalized_research_type)}
 created_at: {yaml_scalar(checked_at)}
 checked_at: {yaml_scalar(checked_at)}
 status: draft
