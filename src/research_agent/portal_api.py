@@ -1253,6 +1253,19 @@ _PORTAL_HTML = """<!doctype html>
     </section>
   </aside>
 
+  <div id="reportModalBackdrop" class="modal-backdrop" aria-hidden="true"></div>
+  <section id="reportModal" class="report-modal" role="dialog" aria-modal="true" aria-labelledby="reportModalTitle" aria-hidden="true" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <p class="eyebrow">Research Report</p>
+        <h2 id="reportModalTitle">보고서 상세 보기</h2>
+      </div>
+      <button id="reportModalClose" class="icon-button" type="button" aria-label="보고서 상세 닫기">닫기</button>
+    </div>
+    <div id="reportModalTabs" class="report-tabs" role="tablist" aria-label="보고서 상세 탭"></div>
+    <div id="reportModalContent" class="report-modal-content"></div>
+  </section>
+
   <main class="layout">
     <section class="panel workflow-panel layout-wide" aria-label="Research Workflow">
       <div class="section-head">
@@ -1515,6 +1528,21 @@ h2 {
   pointer-events: auto;
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(24, 33, 31, 0.36);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+.modal-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .system-drawer {
   position: fixed;
   inset: 0 auto 0 0;
@@ -1574,6 +1602,68 @@ h2 {
   min-height: 36px;
   padding: 0 12px;
   font-size: 13px;
+}
+
+.report-modal {
+  position: fixed;
+  inset: 5vh clamp(18px, 4vw, 58px);
+  z-index: 70;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 14px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 20px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 26px 60px rgba(24, 33, 31, 0.22);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px) scale(0.985);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.report-modal.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.report-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.report-tab {
+  min-height: 38px;
+  white-space: nowrap;
+}
+
+.report-tab.active {
+  border-color: var(--accent);
+  background: var(--soft);
+  color: var(--accent-strong);
+}
+
+.report-modal-content {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.report-modal-content .result-stack {
+  padding-bottom: 8px;
 }
 
 .layout {
@@ -1746,8 +1836,7 @@ h2 {
 }
 
 .review-board .action-list,
-.review-board .job-list,
-.review-board .result-output {
+.review-board .job-list {
   max-height: 560px;
   overflow: auto;
 }
@@ -2151,11 +2240,10 @@ button.primary:hover {
 }
 
 .result-output {
-  min-height: 260px;
-  max-height: 680px;
+  min-height: 160px;
   margin: 0;
   padding: 0;
-  overflow: auto;
+  overflow: visible;
   border: 0;
   background: transparent;
   color: var(--ink);
@@ -2176,6 +2264,37 @@ button.primary:hover {
 .result-stack {
   display: grid;
   gap: 18px;
+}
+
+.result-compact {
+  display: grid;
+  gap: 14px;
+}
+
+.report-summary-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.report-open-button {
+  justify-self: start;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.report-open-button:hover {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+}
+
+.compact-artifacts {
+  grid-template-columns: 1fr;
+}
+
+.result-compact .markdown-preview {
+  max-height: 140px;
+  overflow: hidden;
 }
 
 .result-summary {
@@ -2379,6 +2498,16 @@ button.primary:hover {
     flex-direction: column;
   }
 
+  .report-modal {
+    inset: 10px;
+    padding: 14px;
+  }
+
+  .modal-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .token-input {
     width: 100%;
   }
@@ -2414,7 +2543,10 @@ const state = {
   pollTimer: null,
   preset: "architecture",
   isRefreshing: false,
-  systemDrawerOpen: false
+  systemDrawerOpen: false,
+  reportModalOpen: false,
+  reportActiveTab: "report",
+  reportTabs: {}
 };
 
 const WORKFLOW_STEPS = [
@@ -2425,6 +2557,16 @@ const WORKFLOW_STEPS = [
   { key: "blueprint", label: "Blueprint 합성", detail: "실서비스 기본형을 만듭니다." },
   { key: "review", label: "Obsidian 리뷰", detail: "노트와 다음 작업을 검토합니다." }
 ];
+
+const REPORT_TAB_LABELS = {
+  report: "보고서",
+  evidence: "근거",
+  quality: "품질 점검",
+  vault: "Obsidian 위치",
+  review: "리뷰 작업"
+};
+
+const REPORT_TAB_ORDER = ["report", "evidence", "quality", "vault", "review"];
 
 const PRESETS = {
   architecture: {
@@ -2762,9 +2904,11 @@ function renderJobResult(job) {
   const summary = job.summary || {};
   const review = summary.review || {};
   if (job.status !== "completed") {
+    state.reportTabs = {};
+    setReportModal(false);
     el("resultOutput").className = "result-output";
     el("resultOutput").innerHTML = `
-      <div class="result-stack">
+      <div class="result-compact">
         ${resultSection("현재 진행 상태", `
           <div class="context-grid">
             ${contextCard("상태", job.status)}
@@ -2791,54 +2935,77 @@ function renderJobResult(job) {
   const quality = Array.isArray(review.quality_gates) ? review.quality_gates : [];
   const tasks = Array.isArray(review.review_tasks) ? review.review_tasks : [];
   const links = review.obsidian_links || {};
+  const paths = summary.paths || {};
+  state.reportTabs = {
+    report: `
+      <div class="result-stack">
+        ${resultSection("결과 보고서", `
+          <div class="artifact-grid">${renderReportLinks(links, paths)}</div>
+          <div class="action-detail">Service Blueprint는 최종 보고서, Evidence Ledger는 근거 검토용 원장입니다.</div>
+        `, "Report")}
+        ${resultSection("Service Blueprint", `<div class="markdown-preview">${renderMarkdown(markdown || "Service Blueprint preview가 없습니다.")}</div>`, "5. Blueprint")}
+      </div>
+    `,
+    evidence: `
+      <div class="result-stack">
+        ${resultSection("수집된 출처", renderSourceNotes(paths, links), "2. Sources")}
+        ${resultSection("추출된 핵심 근거", `<div class="markdown-preview">${renderMarkdown(markdownExcerpt(evidenceMarkdown, 80) || "Evidence Ledger preview가 없습니다.")}</div>`, "3. Evidence")}
+      </div>
+    `,
+    quality: `<div class="result-stack">${resultSection("품질 점검", `<div class="quality-grid">${quality.length ? quality.map(qualityCard).join("") : contextCard("상태", "품질 게이트 정보 없음")}</div>`, "4. Quality Gate")}</div>`,
+    vault: `<div class="result-stack">${resultSection("Obsidian 저장 위치", `<div class="artifact-grid">${renderArtifactLinks(links, paths)}</div>`, "6. Vault")}</div>`,
+    review: `<div class="result-stack">${resultSection("다음 리뷰 작업", `<div class="review-task-grid">${renderReviewTaskCards(tasks)}</div>`, "7. Human Review")}</div>`
+  };
   el("resultOutput").className = "result-output";
   el("resultOutput").innerHTML = `
-    <div class="result-stack">
+    <div class="result-compact">
       ${resultSection("결과 보고서", `
-        <div class="artifact-grid">${renderReportLinks(links, summary.paths || {})}</div>
-        <div class="action-detail">Service Blueprint는 최종 보고서, Evidence Ledger는 근거 검토용 원장입니다.</div>
+        <div class="report-summary-actions">
+          <button id="openReportModalButton" class="report-open-button" type="button">보고서 상세 보기</button>
+        </div>
+        <div class="action-detail">보고서 본문, 근거, 품질 점검, Obsidian 위치는 상세 보기에서 확인합니다.</div>
       `, "Report")}
-      ${resultSection("리서치 전략", `
+      ${resultSection("요약", `
         <div class="context-grid">
+          ${contextCard("상태", job.status)}
           ${contextCard("리서치 유형", context.research_type || job.research_type || "-")}
           ${contextCard("분석 깊이", context.research_depth || job.research_depth || "-")}
-          ${contextCard("도메인 초점", context.domain_focus || job.domain_focus || "-")}
-          ${contextCard("출처 전략", (context.source_priority || job.source_priority || []).join(" → ") || "-")}
+          ${contextCard("품질 게이트", qualitySummaryText(quality))}
+          ${contextCard("리뷰 작업", `${tasks.length}건`)}
         </div>
-      `, "1. Strategy")}
-      ${resultSection("수집된 출처", renderSourceNotes(summary.paths || {}, links), "2. Sources")}
-      ${resultSection("추출된 핵심 근거", `<div class="markdown-preview">${renderMarkdown(markdownExcerpt(evidenceMarkdown, 28) || "Evidence Ledger preview가 없습니다.")}</div>`, "3. Evidence")}
-      ${resultSection("품질 점검", `<div class="quality-grid">${quality.length ? quality.map(qualityCard).join("") : contextCard("상태", "품질 게이트 정보 없음")}</div>`, "4. Quality Gate")}
-      ${resultSection("Service Blueprint", `<div class="markdown-preview">${renderMarkdown(markdown || "Service Blueprint preview가 없습니다.")}</div>`, "5. Blueprint")}
-      ${resultSection("Obsidian 저장 위치", `<div class="artifact-grid">${renderArtifactLinks(links, summary.paths || {})}</div>`, "6. Vault")}
-      ${resultSection("다음 리뷰 작업", `<div class="review-task-grid">${renderReviewTaskCards(tasks)}</div>`, "7. Human Review")}
+      `, "Summary")}
     </div>
   `;
+  bindReportSummaryActions();
 }
 
 function renderDryRunResult(job, summary) {
   const context = summary.research_context || {};
   const artifacts = Array.isArray(summary.artifacts) ? summary.artifacts : [];
   const safety = Array.isArray(summary.safety) ? summary.safety : [];
+  state.reportTabs = {
+    report: `<div class="result-stack">${resultSection("결과 보고서 생성 전 확인", `<div class="json-fallback">현재 실행은 드라이런입니다. Obsidian 보고서는 아직 생성하지 않습니다. 실제 보고서를 확인하려면 실행 안전 설정에서 "드라이런으로 먼저 확인"을 끄고 다시 실행하세요.</div>`, "Report")}</div>`,
+    vault: `<div class="result-stack">${resultSection("Obsidian 저장 계획", renderPlannedArtifacts(artifacts), "3. Vault")}</div>`,
+    quality: `<div class="result-stack">${resultSection("안전 점검", `<div class="quality-grid">${safety.map((item) => qualityCard({ status: item.status, name: item.name, detail: item.detail })).join("")}</div>`, "4. Safety")}</div>`
+  };
   el("resultOutput").className = "result-output";
   el("resultOutput").innerHTML = `
-    <div class="result-stack">
+    <div class="result-compact">
       ${resultSection("결과 보고서 생성 전 확인", `
-        <div class="json-fallback">현재 실행은 드라이런입니다. Obsidian 보고서는 아직 생성하지 않습니다. 실제 보고서를 확인하려면 실행 안전 설정에서 "드라이런으로 먼저 확인"을 끄고 다시 실행하세요.</div>
+        <div class="json-fallback">드라이런에서는 Obsidian 보고서를 생성하지 않습니다.</div>
+        <button id="openReportModalButton" class="report-open-button" type="button">드라이런 상세 보기</button>
       `, "Report")}
-      ${resultSection("리서치 전략", `
+      ${resultSection("요약", `
         <div class="context-grid">
           ${contextCard("드라이런", "파일 쓰기 없음")}
           ${contextCard("리서치 유형", context.research_type || job.research_type || "-")}
           ${contextCard("분석 깊이", context.research_depth || job.research_depth || "-")}
-          ${contextCard("출처 전략", (context.source_priority || job.source_priority || []).join(" → ") || "-")}
+          ${contextCard("저장 계획", `${artifacts.length}건`)}
         </div>
-      `, "1. Strategy")}
-      ${resultSection("출처 수집 계획", renderPlannedArtifacts(artifacts, "source-note"), "2. Sources")}
-      ${resultSection("Obsidian 저장 계획", renderPlannedArtifacts(artifacts), "3. Vault")}
-      ${resultSection("안전 점검", `<div class="quality-grid">${safety.map((item) => qualityCard({ status: item.status, name: item.name, detail: item.detail })).join("")}</div>`, "4. Safety")}
+      `, "Summary")}
     </div>
   `;
+  bindReportSummaryActions();
 }
 
 function resultSection(title, body, kicker = "") {
@@ -2864,6 +3031,61 @@ function qualityCard(item) {
       <div class="action-detail">${escapeHtml(item.detail || "")}</div>
     </div>
   `;
+}
+
+function qualitySummaryText(quality) {
+  if (!quality.length) {
+    return "정보 없음";
+  }
+  const fail = quality.filter((item) => String(item.status || "").toUpperCase() === "FAIL").length;
+  const warn = quality.filter((item) => String(item.status || "").toUpperCase() === "WARN").length;
+  if (fail) {
+    return `FAIL ${fail} / 전체 ${quality.length}`;
+  }
+  if (warn) {
+    return `WARN ${warn} / 전체 ${quality.length}`;
+  }
+  return `PASS / 전체 ${quality.length}`;
+}
+
+function bindReportSummaryActions() {
+  const button = el("openReportModalButton");
+  if (button) {
+    button.addEventListener("click", () => setReportModal(true, "report"));
+  }
+}
+
+function setReportModal(open, tabKey = state.reportActiveTab || "report") {
+  state.reportModalOpen = open;
+  const modal = el("reportModal");
+  const backdrop = el("reportModalBackdrop");
+  modal.classList.toggle("open", open);
+  backdrop.classList.toggle("open", open);
+  modal.setAttribute("aria-hidden", open ? "false" : "true");
+  if (open) {
+    renderReportModal(tabKey);
+    modal.focus();
+  }
+}
+
+function renderReportModal(tabKey = "report") {
+  const availableKeys = REPORT_TAB_ORDER.filter((key) => state.reportTabs[key]);
+  if (!availableKeys.length) {
+    el("reportModalTabs").innerHTML = "";
+    el("reportModalContent").innerHTML = `<div class="json-fallback">표시할 보고서 상세 정보가 없습니다.</div>`;
+    return;
+  }
+  const activeKey = availableKeys.includes(tabKey) ? tabKey : availableKeys[0];
+  state.reportActiveTab = activeKey;
+  el("reportModalTabs").innerHTML = availableKeys.map((key) => `
+    <button class="report-tab ${key === activeKey ? "active" : ""}" type="button" role="tab" aria-selected="${key === activeKey ? "true" : "false"}" data-report-tab="${escapeHtml(key)}">
+      ${escapeHtml(REPORT_TAB_LABELS[key] || key)}
+    </button>
+  `).join("");
+  el("reportModalContent").innerHTML = state.reportTabs[activeKey] || "";
+  el("reportModalTabs").querySelectorAll("[data-report-tab]").forEach((node) => {
+    node.addEventListener("click", () => renderReportModal(node.dataset.reportTab));
+  });
 }
 
 function renderArtifactLinks(links, paths) {
@@ -3154,9 +3376,14 @@ function init() {
   el("systemDrawerButton").addEventListener("click", () => setSystemDrawer(!state.systemDrawerOpen));
   el("systemDrawerClose").addEventListener("click", () => setSystemDrawer(false));
   el("systemDrawerBackdrop").addEventListener("click", () => setSystemDrawer(false));
+  el("reportModalClose").addEventListener("click", () => setReportModal(false));
+  el("reportModalBackdrop").addEventListener("click", () => setReportModal(false));
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && state.systemDrawerOpen) {
       setSystemDrawer(false);
+    }
+    if (event.key === "Escape" && state.reportModalOpen) {
+      setReportModal(false);
     }
   });
   refreshStatus();

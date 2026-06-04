@@ -51,6 +51,7 @@ class PortalUISmokeScriptTests(unittest.TestCase):
         <button id="systemDrawerButton" aria-controls="systemDrawer">시스템 상태</button>
         <div id="systemDrawerBackdrop"></div>
         <aside id="systemDrawer"><button id="systemDrawerClose">닫기</button><strong id="systemSummary"></strong><label>포털 접근 토큰<input id="tokenInput"></label></aside>
+        <div id="reportModalBackdrop"></div><section id="reportModal"><div id="reportModalTabs"></div><div id="reportModalContent"></div></section>
         <button id="refreshButton">상태 갱신</button><span id="refreshFeedback"></span>
         <section class="review-board layout-wide"></section>
         <form id="runForm">
@@ -85,9 +86,12 @@ class PortalUISmokeScriptTests(unittest.TestCase):
         function setRefreshState() {}
         function setSystemDrawer() {}
         function renderJobResult() {}
+        function setReportModal() {}
+        function renderReportModal() {}
         function renderReportLinks() {}
         function renderMarkdown() {}
         const reportLabel = "결과 보고서";
+        const modalLabel = "보고서 상세 보기";
         function renderReviewActions() {}
         function startPolling() {}
         async function refreshJobs() {}
