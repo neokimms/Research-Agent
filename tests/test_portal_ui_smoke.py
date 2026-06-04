@@ -85,7 +85,9 @@ class PortalUISmokeScriptTests(unittest.TestCase):
         function setRefreshState() {}
         function setSystemDrawer() {}
         function renderJobResult() {}
+        function renderReportLinks() {}
         function renderMarkdown() {}
+        const reportLabel = "결과 보고서";
         function renderReviewActions() {}
         function startPolling() {}
         async function refreshJobs() {}

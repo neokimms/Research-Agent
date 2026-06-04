@@ -2773,6 +2773,7 @@ function renderJobResult(job) {
             ${contextCard("리서치 유형", job.research_type || "-")}
           </div>
         `, "Workflow")}
+        ${resultSection("결과 보고서", `<div class="json-fallback">작업이 완료되면 Service Blueprint 미리보기와 Obsidian 보고서 링크가 여기에 표시됩니다.</div>`, "Report")}
         ${job.error ? `<div class="json-fallback">${escapeHtml(job.error.type || "Error")}: ${escapeHtml(job.error.message || "")}</div>` : ""}
       </div>
     `;
@@ -2793,6 +2794,10 @@ function renderJobResult(job) {
   el("resultOutput").className = "result-output";
   el("resultOutput").innerHTML = `
     <div class="result-stack">
+      ${resultSection("결과 보고서", `
+        <div class="artifact-grid">${renderReportLinks(links, summary.paths || {})}</div>
+        <div class="action-detail">Service Blueprint는 최종 보고서, Evidence Ledger는 근거 검토용 원장입니다.</div>
+      `, "Report")}
       ${resultSection("리서치 전략", `
         <div class="context-grid">
           ${contextCard("리서치 유형", context.research_type || job.research_type || "-")}
@@ -2818,6 +2823,9 @@ function renderDryRunResult(job, summary) {
   el("resultOutput").className = "result-output";
   el("resultOutput").innerHTML = `
     <div class="result-stack">
+      ${resultSection("결과 보고서 생성 전 확인", `
+        <div class="json-fallback">현재 실행은 드라이런입니다. Obsidian 보고서는 아직 생성하지 않습니다. 실제 보고서를 확인하려면 실행 안전 설정에서 "드라이런으로 먼저 확인"을 끄고 다시 실행하세요.</div>
+      `, "Report")}
       ${resultSection("리서치 전략", `
         <div class="context-grid">
           ${contextCard("드라이런", "파일 쓰기 없음")}
@@ -2860,10 +2868,10 @@ function qualityCard(item) {
 
 function renderArtifactLinks(links, paths) {
   const labels = {
-    run_note: "Run Note",
-    evidence_ledger: "Evidence Ledger",
-    service_blueprint: "Service Blueprint",
-    topic_map: "Topic Map"
+    run_note: "실행 노트",
+    evidence_ledger: "근거 원장",
+    service_blueprint: "Service Blueprint 보고서",
+    topic_map: "토픽 맵"
   };
   const rows = Object.entries(labels).map(([key, label]) => {
     if (links[key]) {
@@ -2875,6 +2883,24 @@ function renderArtifactLinks(links, paths) {
     return "";
   }).filter(Boolean);
   return rows.join("") || `<div class="json-fallback">산출물 링크가 없습니다.</div>`;
+}
+
+function renderReportLinks(links, paths) {
+  const labels = {
+    service_blueprint: "Service Blueprint 보고서 열기",
+    evidence_ledger: "Evidence Ledger 열기",
+    run_note: "Run Note 열기"
+  };
+  const rows = Object.entries(labels).map(([key, label]) => {
+    if (links[key]) {
+      return `<a class="artifact-link" href="${escapeHtml(links[key])}">${escapeHtml(label)}</a>`;
+    }
+    if (paths[key]) {
+      return `<div class="artifact-link">${escapeHtml(label)}<span class="action-detail">${escapeHtml(paths[key])}</span></div>`;
+    }
+    return "";
+  }).filter(Boolean);
+  return rows.join("") || `<div class="json-fallback">보고서 링크가 없습니다. 작업 상태와 Vault 쓰기 설정을 확인하세요.</div>`;
 }
 
 function renderSourceNotes(paths, links) {

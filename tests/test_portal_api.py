@@ -100,6 +100,8 @@ class PortalAPITests(unittest.TestCase):
         self.assertIn(b"reloadCurrentJob", js.body)
         self.assertIn(b"renderJobResult", js.body)
         self.assertIn(b"renderMarkdown", js.body)
+        self.assertIn("결과 보고서".encode("utf-8"), js.body)
+        self.assertIn(b"renderReportLinks", js.body)
         self.assertIn(b"renderReviewActions", js.body)
         self.assertIn(b"renderNextActions", js.body)
         self.assertIn(b"refreshJobStoreHealth", js.body)
