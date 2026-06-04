@@ -193,7 +193,7 @@ class PortalE2ESmokeScriptTests(unittest.TestCase):
         <section>Research Workflow <div id="workflowTrack"></div></section>
         <button id="systemDrawerButton" aria-controls="systemDrawer">시스템 상태</button>
         <div id="systemDrawerBackdrop"></div>
-        <aside id="systemDrawer"><button id="systemDrawerClose">닫기</button><strong id="systemSummary"></strong></aside>
+        <aside id="systemDrawer"><button id="systemDrawerClose">닫기</button><strong id="systemSummary"></strong><label>포털 접근 토큰<input id="tokenInput"></label></aside>
         <button id="refreshButton">상태 갱신</button><span id="refreshFeedback"></span>
         <section class="review-board layout-wide"></section>
         <form id="runForm">

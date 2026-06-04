@@ -1207,7 +1207,6 @@ _PORTAL_HTML = """<!doctype html>
         <span id="apiBadge" class="badge">확인 중</span>
       </button>
       <a class="nav-button" href="/guide">가이드</a>
-      <input id="tokenInput" class="token-input" type="password" autocomplete="off" placeholder="Bearer 토큰">
       <button id="refreshButton" type="button" title="Provider, Vault 상태, 후속 작업, 작업 목록을 다시 불러옵니다.">상태 갱신</button>
       <span id="refreshFeedback" class="refresh-feedback" aria-live="polite"></span>
     </div>
@@ -1223,6 +1222,13 @@ _PORTAL_HTML = """<!doctype html>
       <button id="systemDrawerClose" class="icon-button" type="button" aria-label="시스템 상태 닫기">닫기</button>
     </div>
     <p id="systemSummary" class="drawer-summary">Provider, Vault, 작업 저장소 상태를 확인합니다.</p>
+    <section class="drawer-auth" aria-label="포털 접근 설정">
+      <label class="field">
+        <span>포털 접근 토큰</span>
+        <input id="tokenInput" class="token-input" type="password" autocomplete="off" placeholder="토큰 입력">
+        <small class="field-help">포털 API 인증이 필요한 경우에만 입력합니다.</small>
+      </label>
+    </section>
     <section class="status-grid drawer-status-grid" aria-live="polite">
       <article class="stat">
         <span>Provider</span>
@@ -1549,6 +1555,19 @@ h2 {
 
 .drawer-status-grid {
   grid-template-columns: 1fr;
+}
+
+.drawer-auth {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.drawer-auth .token-input {
+  width: 100%;
 }
 
 .icon-button {
