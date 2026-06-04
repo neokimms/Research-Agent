@@ -15,7 +15,15 @@ from .obsidian import ObsidianWriter
 from .openai_client import OpenAIError, OpenAIResponsesClient, output_text
 from .prompts import synthesis_instructions, synthesis_prompt
 from .quality import FAIL, evaluate_quality_gates
-from .render import render_evidence_ledger, render_evidence_synthesis_context, render_fallback_blueprint, render_run_note, render_source_note, render_topic_map
+from .render import (
+    render_evidence_ledger,
+    render_evidence_synthesis_context,
+    render_fallback_blueprint,
+    render_final_report,
+    render_run_note,
+    render_source_note,
+    render_topic_map,
+)
 from .report_profiles import normalize_research_type
 from .secrets import ProviderSelection, select_llm_provider
 from .textutil import slugify, yaml_scalar
@@ -170,9 +178,28 @@ class ResearchPipeline:
                 ),
             )
 
-            artifact_paths = [*source_paths, evidence_path, blueprint_path, topic_map_path]
-            artifact_strings = [str(path) for path in artifact_paths]
             run_filename = f"{date_prefix}_{slug}_run.md"
+            run_path_preview = self.writer.safe_path(f"{self.settings.obsidian.run_dir}/{run_filename}")
+            final_report_path = self._write_note(
+                created_paths,
+                self.settings.obsidian.final_report_dir,
+                f"{date_prefix}_{slug}_final-report.md",
+                render_final_report(
+                    topic,
+                    blueprint_markdown=blueprint_markdown,
+                    source_paths=[str(path) for path in source_paths],
+                    evidence_path=str(evidence_path),
+                    blueprint_path=str(blueprint_path),
+                    topic_map_path=str(topic_map_path),
+                    run_path=str(run_path_preview),
+                    checked_at=checked_at,
+                    vault_path=str(self.writer.vault_path),
+                    bilingual=self.settings.report.bilingual,
+                ),
+            )
+
+            artifact_paths = [*source_paths, evidence_path, blueprint_path, topic_map_path, final_report_path]
+            artifact_strings = [str(path) for path in artifact_paths]
             bilingual_audit_summary = None
             if self.settings.report.bilingual:
                 audit = run_bilingual_audit(
@@ -201,6 +228,7 @@ class ResearchPipeline:
             evidence_ledger=str(evidence_path),
             service_blueprint=str(blueprint_path),
             topic_map=str(topic_map_path),
+            final_report=str(final_report_path),
         )
 
     def dry_run(self, topic: str, *, offline: bool = False, max_papers_per_source: int = 2) -> DryRunPlan:
@@ -241,6 +269,10 @@ class ResearchPipeline:
                 PlannedArtifact(
                     path=str(self.writer.safe_path(f"{self.settings.obsidian.blueprint_dir}/{date_prefix}_{slug}_service-blueprint.md")),
                     kind="service-blueprint",
+                ),
+                PlannedArtifact(
+                    path=str(self.writer.safe_path(f"{self.settings.obsidian.final_report_dir}/{date_prefix}_{slug}_final-report.md")),
+                    kind="final-report",
                 ),
                 PlannedArtifact(
                     path=str(self.writer.safe_path(f"{self.settings.obsidian.taxonomy_dir}/{date_prefix}_{slug}_topic-map.md")),

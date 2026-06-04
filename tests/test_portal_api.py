@@ -110,8 +110,10 @@ class PortalAPITests(unittest.TestCase):
         self.assertIn(b"renderMarkdown", js.body)
         self.assertIn("결과 보고서".encode("utf-8"), js.body)
         self.assertIn("보고서 전체 보기".encode("utf-8"), js.body)
+        self.assertIn("최종 보고서 보기".encode("utf-8"), js.body)
         self.assertIn("Blueprint 보고서 보기".encode("utf-8"), js.body)
         self.assertIn(b"data-open-report-tab", js.body)
+        self.assertIn(b"final_report_markdown", js.body)
         self.assertIn(b"topic_map_markdown", js.body)
         self.assertIn(b"setReportModal", js.body)
         self.assertIn(b"renderReportModal", js.body)
@@ -261,6 +263,7 @@ class PortalAPITests(unittest.TestCase):
         self.assertEqual(completed["mode"], "run")
         self.assertEqual(completed["summary"]["type"], "run")
         review = completed["summary"]["review"]
+        self.assertIn("Final Report", review["final_report_markdown"])
         self.assertIn("Service Blueprint", review["service_blueprint_markdown"])
         self.assertIn("Evidence Ledger", review["evidence_ledger_markdown"])
         self.assertIn("Research Run", review["run_note_markdown"])
@@ -268,6 +271,7 @@ class PortalAPITests(unittest.TestCase):
         self.assertIsInstance(review["quality_gates"], list)
         self.assertTrue(review["review_tasks"])
         self.assertTrue(review["obsidian_links"]["service_blueprint"].startswith("obsidian://open?"))
+        self.assertTrue(review["obsidian_links"]["final_report"].startswith("obsidian://open?"))
         self.assertIn("language: en", blueprint_text)
         self.assertNotIn("translation_language: ko", blueprint_text)
 

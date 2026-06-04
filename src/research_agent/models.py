@@ -77,6 +77,7 @@ class RunArtifacts:
     evidence_ledger: str
     service_blueprint: str
     topic_map: str
+    final_report: str = ""
 
 
 @dataclass(frozen=True)

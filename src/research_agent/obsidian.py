@@ -38,6 +38,7 @@ class ObsidianWriter:
             f"{self.settings.source_dir}/web",
             self.settings.taxonomy_dir,
             self.settings.blueprint_dir,
+            self.settings.final_report_dir,
             self.settings.evidence_dir,
             self.settings.run_dir,
             "90_Templates",

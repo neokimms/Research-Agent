@@ -30,6 +30,7 @@ class ObsidianSettings:
     source_dir: str = "10_Sources"
     taxonomy_dir: str = "20_Taxonomy"
     blueprint_dir: str = "30_Service-Blueprints"
+    final_report_dir: str = "40_Final-Reports"
     evidence_dir: str = "50_Evidence-Ledger"
     run_dir: str = "60_Runs"
     overwrite_reviewed_notes: bool = False
@@ -171,6 +172,7 @@ def load_settings(path: Path, *, vault_override: Path | None = None, provider_ov
         source_dir=str(obsidian_data.get("source_dir", "10_Sources")),
         taxonomy_dir=str(obsidian_data.get("taxonomy_dir", "20_Taxonomy")),
         blueprint_dir=str(obsidian_data.get("blueprint_dir", "30_Service-Blueprints")),
+        final_report_dir=str(obsidian_data.get("final_report_dir", "40_Final-Reports")),
         evidence_dir=str(obsidian_data.get("evidence_dir", "50_Evidence-Ledger")),
         run_dir=str(obsidian_data.get("run_dir", "60_Runs")),
         overwrite_reviewed_notes=bool(obsidian_data.get("overwrite_reviewed_notes", False)),

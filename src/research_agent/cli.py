@@ -408,6 +408,7 @@ def _run(args: argparse.Namespace, settings) -> int:
     )
     print("Research run complete")
     print(f"Run note: {artifacts.run_note}")
+    print(f"Final report: {artifacts.final_report}")
     print(f"Evidence ledger: {artifacts.evidence_ledger}")
     print(f"Service blueprint: {artifacts.service_blueprint}")
     print(f"Topic map: {artifacts.topic_map}")

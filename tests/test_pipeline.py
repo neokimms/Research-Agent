@@ -41,6 +41,7 @@ class PipelineTests(unittest.TestCase):
             self.assertTrue(Path(artifacts.evidence_ledger).exists())
             self.assertTrue(Path(artifacts.service_blueprint).exists())
             self.assertTrue(Path(artifacts.topic_map).exists())
+            self.assertTrue(Path(artifacts.final_report).exists())
             self.assertGreaterEqual(len(artifacts.source_notes), 3)
             first_source_note = Path(artifacts.source_notes[0]).read_text(encoding="utf-8")
             self.assertIn('source_id: "S001"', first_source_note)
@@ -68,6 +69,12 @@ class PipelineTests(unittest.TestCase):
             self.assertIn("type: topic-map", topic_map)
             self.assertIn("**한국어 번역**", topic_map)
             self.assertIn("[[30_Service-Blueprints/", topic_map)
+            final_report = Path(artifacts.final_report).read_text(encoding="utf-8")
+            self.assertIn("type: final-report", final_report)
+            self.assertIn("# Final Report: agentic RAG", final_report)
+            self.assertIn("## Final Report Body", final_report)
+            self.assertIn("[[30_Service-Blueprints/", final_report)
+            self.assertIn("[[50_Evidence-Ledger/", final_report)
 
     def test_run_note_records_selected_gemini_provider(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -230,6 +237,9 @@ class PipelineTests(unittest.TestCase):
             self.assertIn("## Market Landscape", blueprint)
             self.assertIn("## Vendor And Product Map", blueprint)
             self.assertIn("## Opportunity Hypotheses", blueprint)
+            final_report = Path(artifacts.final_report).read_text(encoding="utf-8")
+            self.assertIn("type: final-report", final_report)
+            self.assertIn("Market Research Report", final_report)
 
     def test_run_note_is_written_once_after_bilingual_audit(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

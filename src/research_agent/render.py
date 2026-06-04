@@ -483,6 +483,86 @@ translation_language: ko
 """
 
 
+def render_final_report(
+    topic: str,
+    *,
+    blueprint_markdown: str,
+    source_paths: list[str],
+    evidence_path: str,
+    blueprint_path: str,
+    topic_map_path: str,
+    run_path: str,
+    checked_at: str,
+    vault_path: str,
+    bilingual: bool = True,
+) -> str:
+    source_links = "\n".join(f"- {_wikilink(path, vault_path)}" for path in source_paths) or "- No source notes generated."
+    blueprint_body = _demote_markdown_headings(_strip_markdown_frontmatter(blueprint_markdown), levels=1).strip()
+    review_steps = (
+        "- Start here as the human-readable final report.\n"
+        "- Use the Evidence Ledger for claim-level verification.\n"
+        "- Use the Run Note for quality gates, warnings, and generated artifact history.\n"
+        "- Promote this note from draft to reviewed after checking weak sources."
+    )
+    return f"""---
+type: final-report
+topic: {yaml_scalar(topic)}
+created_at: {yaml_scalar(checked_at)}
+checked_at: {yaml_scalar(checked_at)}
+status: draft
+generated_by: research-agent
+{_language_frontmatter(bilingual)}
+---
+
+# Final Report: {topic}
+
+## How To Read This Report
+
+{_localized_block(review_steps, bilingual=bilingual)}
+
+## Final Report Body
+
+{blueprint_body or "- Service blueprint content was not captured."}
+
+## Evidence And Run Links
+
+- Service Blueprint: {_wikilink(blueprint_path, vault_path)}
+- Evidence Ledger: {_wikilink(evidence_path, vault_path)}
+- Topic Map: {_wikilink(topic_map_path, vault_path)}
+- Run Note: {_wikilink(run_path, vault_path)}
+
+## Source Notes
+
+{source_links}
+
+## Obsidian Review
+
+{_localized_block("- Review linked source notes.\n- Confirm citations for low-confidence or fallback claims.\n- Keep unresolved issues in the source notes and Evidence Ledger before promoting this report.", bilingual=bilingual)}
+"""
+
+
+def _strip_markdown_frontmatter(markdown: str) -> str:
+    text = markdown.strip()
+    if not text.startswith("---\n"):
+        return text
+    end = text.find("\n---", 4)
+    if end == -1:
+        return text
+    return text[end + len("\n---") :].strip()
+
+
+def _demote_markdown_headings(markdown: str, *, levels: int) -> str:
+    demoted: list[str] = []
+    for line in markdown.splitlines():
+        if line.startswith("#"):
+            count = len(line) - len(line.lstrip("#"))
+            if count > 0 and count < 6 and line[count : count + 1] == " ":
+                demoted.append("#" * min(6, count + levels) + line[count:])
+                continue
+        demoted.append(line)
+    return "\n".join(demoted)
+
+
 def _wikilink(path: str, vault_path: str) -> str:
     path_obj = Path(path)
     vault = Path(vault_path)
@@ -721,6 +801,8 @@ KO_TRANSLATIONS = {
     "Link the service blueprint back to this topic map after review.": "검토 후 실서비스 기본형을 이 topic map에 다시 연결합니다.",
     "Link reviewed source notes to the evidence ledger.": "검토된 출처 노트를 근거 장부에 연결합니다.",
     "Promote durable categories into taxonomy notes under `20_Taxonomy`.": "오래 유지될 분류를 `20_Taxonomy` 아래 taxonomy note로 승격합니다.",
+    "- Start here as the human-readable final report.\n- Use the Evidence Ledger for claim-level verification.\n- Use the Run Note for quality gates, warnings, and generated artifact history.\n- Promote this note from draft to reviewed after checking weak sources.": "- 사람이 읽는 최종 보고서는 여기에서 시작하세요.\n- 주장 단위 검증은 Evidence Ledger를 사용하세요.\n- 품질 게이트, 경고, 생성 산출물 이력은 Run Note를 사용하세요.\n- 약한 출처를 확인한 뒤 이 노트를 draft에서 reviewed 상태로 승격하세요.",
+    "- Review linked source notes.\n- Confirm citations for low-confidence or fallback claims.\n- Keep unresolved issues in the source notes and Evidence Ledger before promoting this report.": "- 연결된 출처 노트를 검토하세요.\n- 신뢰도가 낮거나 fallback으로 생성된 주장에 대한 인용을 확인하세요.\n- 이 보고서를 승격하기 전에 미해결 이슈를 출처 노트와 Evidence Ledger에 남기세요.",
     "By creating an OpenAI account and securing an API key, users can begin building customized AI assistants tailored to their unique goals—whether for personal productivity, lifestyle tasks, or business use.": "OpenAI 계정을 만들고 API 키를 확보하면, 사용자는 개인 생산성, 생활 업무, 비즈니스 활용 등 고유한 목표에 맞춘 맞춤형 AI 어시스턴트 구축을 시작할 수 있습니다.",
     "LangGraph is a popular open source framework—created by LangChain—that helps developers use large language models (LLMs) to build sophisticated, stateful, and multi-actor applications.": "LangGraph는 LangChain이 만든 인기 있는 오픈소스 프레임워크로, 개발자가 대규모 언어 모델(LLM)을 사용해 정교하고 상태를 유지하는 다중 행위자 애플리케이션을 구축하도록 돕습니다.",
 }

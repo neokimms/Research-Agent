@@ -22,6 +22,7 @@ timezone = "Asia/Seoul"
 
 [obsidian]
 vault_path = "{vault}"
+final_report_dir = "Reports"
 
 [openai.models]
 synthesis = "gpt-5.5"
@@ -42,6 +43,7 @@ cleanup_partial_artifacts = false
             )
             settings = load_settings(config)
             self.assertEqual(settings.obsidian.vault_path, vault)
+            self.assertEqual(settings.obsidian.final_report_dir, "Reports")
             self.assertEqual(settings.openai.models.synthesis, "gpt-5.5")
             self.assertEqual(settings.llm.provider, "auto")
             self.assertEqual(settings.gemini.models.synthesis, "gemini-2.5-flash")

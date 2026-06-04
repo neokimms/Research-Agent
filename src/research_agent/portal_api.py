@@ -651,6 +651,7 @@ class ResearchPortalAPIAdapter:
                         "evidence_ledger": artifacts.evidence_ledger,
                         "service_blueprint": artifacts.service_blueprint,
                         "topic_map": artifacts.topic_map,
+                        "final_report": artifacts.final_report,
                     },
                 }
                 summary["review"] = _build_run_review_summary(summary["paths"], settings.obsidian.vault_path)
@@ -707,6 +708,7 @@ class ResearchPortalAPIAdapter:
             if record is None:
                 return _json_response(404, {"error": "job_not_found", "job_id": job_id}, head=head)
             payload = record.to_dict(include_result=True)
+        payload = self._refresh_completed_run_payload(payload)
         return _json_response(200, payload, head=head)
 
     def _runs_response(self, *, head: bool = False) -> PortalAPIResponse:
@@ -716,6 +718,7 @@ class ResearchPortalAPIAdapter:
                 for record in self._jobs.values()
                 if record.status == "completed" and record.run_id
             ]
+        runs = [self._refresh_completed_run_payload(run) for run in runs]
         runs.sort(key=lambda item: str(item.get("finished_at") or item.get("created_at") or ""), reverse=True)
         return _json_response(200, {"runs": runs}, head=head)
 
@@ -725,12 +728,32 @@ class ResearchPortalAPIAdapter:
             if record is None or record.status != "completed":
                 return _json_response(404, {"error": "run_not_found", "run_id": run_id}, head=head)
             payload = record.to_dict(include_result=True)
+        payload = self._refresh_completed_run_payload(payload)
         return _json_response(200, payload, head=head)
 
     def _job_payload(self, job_id: str) -> dict[str, Any]:
         with self._lock:
             record = self._jobs[job_id]
-            return record.to_dict(include_result=True)
+            payload = record.to_dict(include_result=True)
+        return self._refresh_completed_run_payload(payload)
+
+    def _refresh_completed_run_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if payload.get("status") != "completed":
+            return payload
+        summary = payload.get("summary")
+        if not isinstance(summary, dict) or summary.get("type") != "run":
+            return payload
+        paths = summary.get("paths")
+        if not isinstance(paths, Mapping):
+            return payload
+        enriched_paths = _with_inferred_final_report_path(paths)
+        summary = dict(summary)
+        summary["paths"] = enriched_paths
+        summary["review"] = _build_run_review_summary(enriched_paths, self.settings.obsidian.vault_path)
+        payload = dict(payload)
+        payload["summary"] = summary
+        payload["paths"] = enriched_paths
+        return payload
 
     def _mark_interrupted_jobs(self) -> bool:
         changed = False
@@ -1093,23 +1116,46 @@ def _json_safe(value: Any) -> Any:
 
 
 def _build_run_review_summary(paths: Mapping[str, Any], vault_path: Path) -> dict[str, Any]:
+    enriched_paths = _with_inferred_final_report_path(paths)
+    final_report_path = _optional_string(enriched_paths.get("final_report"))
     blueprint_path = _optional_string(paths.get("service_blueprint"))
     evidence_path = _optional_string(paths.get("evidence_ledger"))
     run_path = _optional_string(paths.get("run_note"))
     topic_map_path = _optional_string(paths.get("topic_map"))
+    final_report_markdown = _read_markdown_preview(final_report_path)
     blueprint_markdown = _read_markdown_preview(blueprint_path)
     evidence_markdown = _read_markdown_preview(evidence_path)
     run_markdown = _read_markdown_preview(run_path)
     topic_map_markdown = _read_markdown_preview(topic_map_path)
     return {
+        "final_report_markdown": final_report_markdown,
         "service_blueprint_markdown": blueprint_markdown,
         "evidence_ledger_markdown": evidence_markdown,
         "run_note_markdown": run_markdown,
         "topic_map_markdown": topic_map_markdown,
         "quality_gates": _parse_quality_gates(run_markdown or evidence_markdown),
         "review_tasks": _build_review_tasks(evidence_markdown, run_markdown),
-        "obsidian_links": _obsidian_links(paths, vault_path),
+        "obsidian_links": _obsidian_links(enriched_paths, vault_path),
     }
+
+
+def _with_inferred_final_report_path(paths: Mapping[str, Any]) -> dict[str, Any]:
+    enriched = dict(paths)
+    if _optional_string(enriched.get("final_report")):
+        return enriched
+    blueprint_path = _optional_string(enriched.get("service_blueprint"))
+    if not blueprint_path:
+        return enriched
+    blueprint = Path(blueprint_path)
+    if blueprint.name.endswith("_service-blueprint.md"):
+        candidate = (
+            blueprint.parent.parent
+            / "40_Final-Reports"
+            / blueprint.name.replace("_service-blueprint.md", "_final-report.md")
+        )
+        if candidate.exists():
+            enriched["final_report"] = str(candidate)
+    return enriched
 
 
 def _read_markdown_preview(path: str | None, *, limit: int = RUN_PREVIEW_LIMIT) -> str:
@@ -2590,6 +2636,7 @@ const WORKFLOW_STEPS = [
 
 const REPORT_TAB_LABELS = {
   summary: "요약",
+  final: "최종 보고서",
   blueprint: "Blueprint",
   evidence: "Evidence Ledger",
   run: "Run Note",
@@ -2599,7 +2646,7 @@ const REPORT_TAB_LABELS = {
   review: "리뷰 작업"
 };
 
-const REPORT_TAB_ORDER = ["summary", "blueprint", "evidence", "run", "topic", "quality", "vault", "review"];
+const REPORT_TAB_ORDER = ["summary", "final", "blueprint", "evidence", "run", "topic", "quality", "vault", "review"];
 
 const PRESETS = {
   architecture: {
@@ -2963,6 +3010,7 @@ function renderJobResult(job) {
   }
 
   const context = summary.research_context || {};
+  const finalMarkdown = review.final_report_markdown || "";
   const markdown = review.service_blueprint_markdown || "";
   const evidenceMarkdown = review.evidence_ledger_markdown || "";
   const runMarkdown = review.run_note_markdown || "";
@@ -2990,6 +3038,7 @@ function renderJobResult(job) {
         `, "Summary")}
       </div>
     `,
+    final: `<div class="result-stack">${resultSection("최종 보고서", `<div class="markdown-preview">${renderMarkdown(finalMarkdown || markdown || "최종 보고서 preview가 없습니다.")}</div>`, "Final Report")}</div>`,
     blueprint: `<div class="result-stack">${resultSection("Service Blueprint", `<div class="markdown-preview">${renderMarkdown(markdown || "Service Blueprint preview가 없습니다.")}</div>`, "5. Blueprint")}</div>`,
     evidence: `
       <div class="result-stack">
@@ -3146,6 +3195,7 @@ function renderReportModal(tabKey = "summary") {
 
 function renderArtifactLinks(links, paths) {
   const labels = {
+    final_report: "최종 보고서",
     run_note: "실행 노트",
     evidence_ledger: "근거 원장",
     service_blueprint: "Service Blueprint 보고서",
@@ -3165,6 +3215,7 @@ function renderArtifactLinks(links, paths) {
 
 function renderReportLinks(links, paths) {
   const targets = [
+    { tab: "final", path: "final_report", label: "최종 보고서 보기", detail: "Obsidian에 저장되는 대표 보고서" },
     { tab: "blueprint", path: "service_blueprint", label: "Blueprint 보고서 보기", detail: "최종 합성 보고서" },
     { tab: "evidence", path: "evidence_ledger", label: "Evidence Ledger 보기", detail: "claim과 citation 근거 원장" },
     { tab: "run", path: "run_note", label: "Run Note 보기", detail: "실행 로그와 품질 점검" }
