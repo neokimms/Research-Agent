@@ -62,6 +62,7 @@ class PortalJobRecord:
     bilingual: bool | None = None
     rerun_of: str | None = None
     run_id: str | None = None
+    pipeline_stage: str = ""
     summary: dict[str, Any] | None = None
     error: dict[str, str] | None = None
 
@@ -85,6 +86,7 @@ class PortalJobRecord:
             "domain_focus": self.domain_focus,
             "bilingual": self.bilingual,
             "run_id": self.run_id,
+            "pipeline_stage": self.pipeline_stage,
             "status_url": f"/jobs/{self.job_id}",
         }
         if self.rerun_of:
@@ -129,6 +131,7 @@ class PortalJobRecord:
             bilingual=_optional_bool(payload.get("bilingual")),
             rerun_of=_optional_safe_id(payload.get("rerun_of")),
             run_id=_optional_string(payload.get("run_id")),
+            pipeline_stage=str(payload.get("pipeline_stage") or "").strip(),
             summary=_optional_mapping(payload.get("summary")),
             error=_optional_error(payload.get("error")),
         )
@@ -512,6 +515,9 @@ class ResearchPortalAPIAdapter:
         offline = bool(payload.get("offline", False))
         dry_run = bool(payload.get("dry_run", False))
         research_type = str(payload.get("research_type") or "architecture").strip().lower()
+        _VALID_RESEARCH_TYPES = {"architecture", "paper", "papers", "standards", "market", "official-docs"}
+        if research_type not in _VALID_RESEARCH_TYPES:
+            research_type = "architecture"
         research_depth = str(payload.get("research_depth") or "standard").strip().lower()
         if research_depth not in {"quick", "standard", "deep"}:
             return _json_response(400, {"error": "invalid_research_depth", "allowed": ["quick", "standard", "deep"]})
@@ -623,6 +629,8 @@ class ResearchPortalAPIAdapter:
                     offline=offline,
                     max_papers_per_source=max_papers_per_source,
                     rerun_of=rerun_of,
+                    domain_focus=domain_focus,
+                    on_stage=lambda stage: self._update_job_stage(job_id, stage),
                 )
                 summary = {
                     "type": "run",
@@ -672,6 +680,13 @@ class ResearchPortalAPIAdapter:
         if bilingual is not None:
             report = replace(report, bilingual=bilingual)
         return replace(self.settings, llm=llm, sources=sources, report=report)
+
+    def _update_job_stage(self, job_id: str, stage: str) -> None:
+        with self._lock:
+            record = self._jobs.get(job_id)
+            if record is not None:
+                record.pipeline_stage = stage
+                self._save_jobs()
 
     def _jobs_response(self, *, head: bool = False) -> PortalAPIResponse:
         with self._lock:
@@ -1194,18 +1209,62 @@ _PORTAL_HTML = """<!doctype html>
   </header>
 
   <main class="layout">
+    <section class="panel workflow-panel layout-wide" aria-label="Research Workflow">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Research Workflow</p>
+          <h2>목표 정의에서 Obsidian 리뷰까지</h2>
+        </div>
+        <span id="workflowBadge" class="badge">대기</span>
+      </div>
+      <div id="workflowTrack" class="workflow-track"></div>
+    </section>
+
+    <details class="system-panel layout-wide">
+      <summary>
+        <span>시스템 상태</span>
+        <strong id="systemSummary">Provider, Vault, 작업 저장소 상태를 확인합니다.</strong>
+        <span id="apiBadge" class="badge">확인 중</span>
+      </summary>
+      <section class="status-grid" aria-live="polite">
+        <article class="stat">
+          <span>Provider</span>
+          <strong id="providerStatus">-</strong>
+        </article>
+        <article class="stat">
+          <span>Obsidian Vault</span>
+          <strong id="vaultStatus">-</strong>
+        </article>
+        <article class="stat">
+          <span>Vault Health</span>
+          <strong id="healthStatus">-</strong>
+        </article>
+        <article class="stat">
+          <span>Vault 정비</span>
+          <strong id="actionStatus">-</strong>
+        </article>
+        <article class="stat">
+          <span>작업 저장소</span>
+          <strong id="jobStoreStatus">-</strong>
+        </article>
+      </section>
+    </details>
+
     <section class="panel run-panel">
       <div class="section-head">
-        <h2>실행</h2>
-        <span id="apiBadge" class="badge">확인 중</span>
+        <div>
+          <p class="eyebrow">1. 목표 정의</p>
+          <h2>리서치 요청</h2>
+        </div>
       </div>
       <form id="runForm" class="run-form">
         <label class="field wide">
-          <span>주제</span>
+          <span>리서치 질문 / 목표</span>
           <textarea id="topicInput" rows="4" required placeholder="OpenAI Agents SDK와 LangGraph 비교"></textarea>
+          <small class="field-help">비교, 구조 분류, 도입 판단처럼 결과에서 답해야 할 질문을 한 문장으로 적습니다.</small>
         </label>
         <fieldset class="preset-field wide">
-          <legend>리서치 유형</legend>
+          <legend>2. 리서치 전략</legend>
           <div class="preset-grid" id="presetButtons">
             <button class="preset-button active" type="button" data-preset="architecture">IT 아키텍처</button>
             <button class="preset-button" type="button" data-preset="paper">논문 합성</button>
@@ -1213,18 +1272,13 @@ _PORTAL_HTML = """<!doctype html>
             <button class="preset-button" type="button" data-preset="market">시장 조사</button>
             <button class="preset-button" type="button" data-preset="official-docs">공식 문서</button>
           </div>
-          <div id="priorityPreview" class="priority-preview">official-docs → standards → papers</div>
+          <div class="strategy-summary">
+            <span>출처 전략</span>
+            <strong id="priorityPreview">official-docs → standards → papers</strong>
+          </div>
         </fieldset>
         <label class="field">
-          <span>제공자</span>
-          <select id="providerInput">
-            <option value="auto">auto</option>
-            <option value="openai">openai</option>
-            <option value="gemini">gemini</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>리서치 깊이</span>
+          <span>분석 깊이</span>
           <select id="depthInput">
             <option value="quick">빠른 스캔</option>
             <option value="standard" selected>표준 분석</option>
@@ -1232,50 +1286,57 @@ _PORTAL_HTML = """<!doctype html>
           </select>
         </label>
         <label class="field">
-          <span>출처당 논문 수</span>
-          <input id="papersInput" type="number" min="1" max="10" value="2">
-        </label>
-        <label class="field">
-          <span>대상 도메인</span>
+          <span>도메인 초점</span>
           <input id="domainInput" type="text" placeholder="보안, ML, 클라우드">
         </label>
-        <label class="switch">
-          <input id="dryRunInput" type="checkbox" checked>
-          <span>드라이런</span>
-        </label>
-        <label class="switch">
-          <input id="offlineInput" type="checkbox">
-          <span>오프라인</span>
-        </label>
-        <label class="switch">
-          <input id="bilingualInput" type="checkbox" checked>
-          <span>원본/한글 병기</span>
-        </label>
+        <fieldset class="option-field wide">
+          <legend>3. 결과 형식</legend>
+          <div class="option-grid">
+            <label class="switch">
+              <input id="bilingualInput" type="checkbox" checked>
+              <span>한글 보고서 + 원문 병기</span>
+            </label>
+          </div>
+        </fieldset>
+        <details class="advanced-options wide">
+          <summary>실행 안전 설정</summary>
+          <div class="advanced-grid">
+            <label class="field">
+              <span>AI Provider</span>
+              <select id="providerInput">
+                <option value="auto">auto</option>
+                <option value="openai">openai</option>
+                <option value="gemini">gemini</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>출처당 논문 수</span>
+              <input id="papersInput" type="number" min="1" max="10" value="2">
+            </label>
+            <label class="switch">
+              <input id="dryRunInput" type="checkbox" checked>
+              <span>드라이런으로 먼저 확인</span>
+            </label>
+            <label class="switch">
+              <input id="offlineInput" type="checkbox">
+              <span>오프라인 검증</span>
+            </label>
+          </div>
+        </details>
         <button id="runButton" class="primary" type="submit">실행 시작</button>
       </form>
     </section>
 
-    <section class="status-grid" aria-live="polite">
-      <article class="stat">
-        <span>제공자</span>
-        <strong id="providerStatus">-</strong>
-      </article>
-      <article class="stat">
-        <span>볼트</span>
-        <strong id="vaultStatus">-</strong>
-      </article>
-      <article class="stat">
-        <span>상태</span>
-        <strong id="healthStatus">-</strong>
-      </article>
-      <article class="stat">
-        <span>후속 작업</span>
-        <strong id="actionStatus">-</strong>
-      </article>
-      <article class="stat">
-        <span>작업 저장소</span>
-        <strong id="jobStoreStatus">-</strong>
-      </article>
+    <section class="panel result-panel">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Workflow Review</p>
+          <h2>결과 검토</h2>
+        </div>
+        <span id="resultBadge" class="badge">대기</span>
+      </div>
+      <div id="progressSteps" class="progress-steps"></div>
+      <div id="resultOutput" class="result-output result-empty">리서치 요청을 실행하면 단계별 검토 화면이 표시됩니다.</div>
     </section>
 
     <section class="panel action-panel">
@@ -1310,15 +1371,6 @@ _PORTAL_HTML = """<!doctype html>
         <span id="jobCount" class="badge">0</span>
       </div>
       <div id="jobList" class="job-list"></div>
-    </section>
-
-    <section class="panel">
-      <div class="section-head">
-        <h2>결과</h2>
-        <span id="resultBadge" class="badge">대기</span>
-      </div>
-      <div id="progressSteps" class="progress-steps"></div>
-      <div id="resultOutput" class="result-output result-empty">선택된 실행이 없습니다.</div>
     </section>
   </main>
 
@@ -1420,6 +1472,10 @@ h2 {
   grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
   gap: 18px;
   padding: 24px clamp(20px, 4vw, 48px) 40px;
+}
+
+.layout-wide {
+  grid-column: 1 / -1;
 }
 
 .guide-page {
@@ -1553,7 +1609,12 @@ h2 {
 }
 
 .run-panel {
-  grid-row: span 2;
+  align-self: start;
+}
+
+.result-panel {
+  align-self: start;
+  min-width: 0;
 }
 
 .section-head {
@@ -1581,9 +1642,105 @@ h2 {
   gap: 12px;
 }
 
+.workflow-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.workflow-track {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.workflow-step {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 8px;
+  min-height: 68px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.workflow-step strong,
+.workflow-step span {
+  display: block;
+  line-height: 1.35;
+}
+
+.workflow-step strong {
+  font-size: 13px;
+}
+
+.workflow-step span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.workflow-step.done {
+  border-color: var(--good);
+  background: #f1f8f4;
+}
+
+.workflow-step.active {
+  border-color: var(--accent);
+  background: var(--soft);
+}
+
+.workflow-step.fail {
+  border-color: var(--bad);
+  background: #fff5f5;
+}
+
+.workflow-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.system-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.system-panel summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 50px;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+.system-panel summary span:first-child {
+  font-weight: 900;
+}
+
+.system-panel summary strong {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.system-panel .status-grid {
+  padding: 0 14px 14px;
+}
+
 .stat {
-  min-height: 86px;
-  padding: 14px;
+  min-height: 64px;
+  padding: 10px 12px;
 }
 
 .stat span {
@@ -1596,8 +1753,8 @@ h2 {
 
 .stat strong {
   display: block;
-  margin-top: 12px;
-  font-size: 18px;
+  margin-top: 8px;
+  font-size: 14px;
   line-height: 1.2;
   overflow-wrap: anywhere;
 }
@@ -1625,7 +1782,14 @@ h2 {
   grid-column: 1 / -1;
 }
 
-.preset-field {
+.field-help {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.preset-field,
+.option-field {
   display: grid;
   gap: 10px;
   min-width: 0;
@@ -1634,7 +1798,8 @@ h2 {
   border: 0;
 }
 
-.preset-field legend {
+.preset-field legend,
+.option-field legend {
   padding: 0;
   color: var(--muted);
   font-size: 13px;
@@ -1658,7 +1823,9 @@ h2 {
   color: var(--accent-strong);
 }
 
-.priority-preview {
+.strategy-summary {
+  display: grid;
+  gap: 4px;
   min-height: 34px;
   padding: 8px 10px;
   border: 1px solid var(--line);
@@ -1668,6 +1835,45 @@ h2 {
   font-size: 12px;
   line-height: 1.4;
   overflow-wrap: anywhere;
+}
+
+.strategy-summary span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.strategy-summary strong {
+  color: var(--accent-strong);
+  font-size: 13px;
+}
+
+.option-grid,
+.advanced-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.advanced-options {
+  grid-column: 1 / -1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.advanced-options summary {
+  min-height: 42px;
+  padding: 11px 12px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.advanced-options .advanced-grid {
+  padding: 0 12px 12px;
 }
 
 textarea,
@@ -1864,12 +2070,77 @@ button.primary:hover {
 
 .result-stack {
   display: grid;
-  gap: 14px;
+  gap: 18px;
 }
 
 .result-summary {
   display: grid;
   gap: 10px;
+}
+
+.result-section {
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.result-section:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.result-section h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.section-kicker {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.workflow-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workflow-list li {
+  padding: 8px 10px;
+  border-left: 3px solid var(--accent);
+  background: #fbfcfa;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.source-list,
+.review-task-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.source-link {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+  color: var(--accent-strong);
+  font-weight: 800;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.source-link span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .context-grid,
@@ -2003,8 +2274,16 @@ button.primary:hover {
 
   .status-grid,
   .run-form,
+  .workflow-track,
+  .option-grid,
+  .advanced-grid,
   .progress-steps {
     grid-template-columns: 1fr;
+  }
+
+  .system-panel summary {
+    grid-template-columns: 1fr;
+    padding: 12px;
   }
 
   .guide-hero h2 {
@@ -2024,6 +2303,15 @@ const state = {
   pollTimer: null,
   preset: "architecture"
 };
+
+const WORKFLOW_STEPS = [
+  { key: "goal", label: "목표 정의", detail: "리서치 질문을 명확히 적습니다." },
+  { key: "strategy", label: "리서치 전략", detail: "출처 우선순위와 깊이를 정합니다." },
+  { key: "collect", label: "출처 수집", detail: "공식 문서, 표준, 논문을 모읍니다." },
+  { key: "evidence", label: "근거 추출", detail: "claim과 citation을 구조화합니다." },
+  { key: "blueprint", label: "Blueprint 합성", detail: "실서비스 기본형을 만듭니다." },
+  { key: "review", label: "Obsidian 리뷰", detail: "노트와 다음 작업을 검토합니다." }
+];
 
 const PRESETS = {
   architecture: {
@@ -2103,13 +2391,45 @@ function setBadge(id, text, status = "") {
 function printResult(label, value) {
   el("resultBadge").textContent = label;
   if (value && typeof value === "object" && value.job_id) {
+    renderWorkflow(value);
     renderJobResult(value);
     renderProgress(value);
     renderReviewActions(value);
     return;
   }
+  renderWorkflow();
   el("resultOutput").className = "result-output json-fallback";
   el("resultOutput").textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+}
+
+function renderWorkflow(job = {}) {
+  const status = job.status || "";
+  const stage = job.pipeline_stage || "";
+  const failed = ["failed", "interrupted", "cancelled"].includes(status);
+  const completed = status === "completed";
+  let activeIdx = 0;
+  if (status === "queued") activeIdx = 2;
+  if (status === "running" && stage === "collecting") activeIdx = 2;
+  if (status === "running" && stage === "synthesizing") activeIdx = 4;
+  if (status === "running" && stage === "writing") activeIdx = 5;
+  if (completed) activeIdx = WORKFLOW_STEPS.length;
+  el("workflowBadge").textContent = completed ? "완료" : failed ? "실패" : status === "running" ? "진행 중" : status === "queued" ? "대기열" : "대기";
+  el("workflowBadge").className = `badge ${completed ? "ok" : failed ? "fail" : status ? "warn" : ""}`.trim();
+  el("workflowTrack").innerHTML = WORKFLOW_STEPS.map((step, index) => {
+    let klass = "";
+    if (completed || index < activeIdx) klass = "done";
+    else if (failed && index === activeIdx) klass = "fail";
+    else if (index === activeIdx) klass = "active";
+    return `
+      <div class="workflow-step ${klass}">
+        <span class="workflow-index">${index + 1}</span>
+        <div>
+          <strong>${escapeHtml(step.label)}</strong>
+          <span>${escapeHtml(step.detail)}</span>
+        </div>
+      </div>
+    `;
+  }).join("");
 }
 
 function renderNextActions(payload) {
@@ -2145,6 +2465,7 @@ async function refreshStatus() {
     setBadge("apiBadge", "오프라인", "fail");
     printResult("오류", error.payload || error.message);
   }
+  updateSystemSummary();
 
   try {
     const vault = await requestJson("/vault-health");
@@ -2153,6 +2474,7 @@ async function refreshStatus() {
   } catch (error) {
     el("healthStatus").textContent = "인증";
   }
+  updateSystemSummary();
 
   try {
     const actions = await requestJson("/next-actions");
@@ -2167,9 +2489,19 @@ async function refreshStatus() {
       </div>
     `;
   }
+  updateSystemSummary();
 
   await refreshJobStoreHealth();
   await refreshJobs();
+  updateSystemSummary();
+}
+
+function updateSystemSummary() {
+  const provider = el("providerStatus").textContent || "-";
+  const health = el("healthStatus").textContent || "-";
+  const actions = el("actionStatus").textContent || "-";
+  const jobs = el("jobStoreStatus").textContent || "-";
+  el("systemSummary").textContent = `${provider} / Vault ${health} / 정비 ${actions} / Jobs ${jobs}`;
 }
 
 function renderReviewActions(job) {
@@ -2187,30 +2519,38 @@ function renderReviewActions(job) {
     `;
     return;
   }
-  list.innerHTML = tasks.map((task) => `
-    <div class="action-row priority-${task.severity === "fail" ? "1" : task.severity === "warn" ? "2" : ""}">
-      <p class="action-title">${escapeHtml(task.title || "검토 작업")}</p>
-      <div class="action-detail">${escapeHtml(task.kind || "review")} / ${escapeHtml(task.severity || "ok")}</div>
-    </div>
-  `).join("");
+  list.innerHTML = renderReviewTaskCards(tasks);
 }
 
 function renderProgress(job = {}) {
   const status = job.status || "";
+  const stage = job.pipeline_stage || "";
   const done = status === "completed";
   const failed = ["failed", "interrupted", "cancelled"].includes(status);
+
+  // steps in order — key matches pipeline on_stage values
   const steps = [
-    ["queued", "접수"],
-    ["collect", "소스·근거 수집"],
-    ["synthesis", "합성·저장"],
-    ["done", "완료"]
+    ["queued",      "접수"],
+    ["collecting",  "소스·근거 수집"],
+    ["synthesizing","합성"],
+    ["writing",     "저장"]
   ];
+
+  const stageIndex = (s) => {
+    const i = steps.findIndex(([k]) => k === s);
+    return i === -1 ? 0 : i;
+  };
+  const activeIdx = done ? steps.length : stageIndex(stage || (status === "queued" ? "queued" : "collecting"));
+
   el("progressSteps").innerHTML = steps.map(([key, label], index) => {
     let klass = "";
-    if (done) klass = "done";
-    else if (failed && index === 3) klass = "fail";
-    else if (status === "queued" && index === 0) klass = "active";
-    else if (status === "running") klass = index === 0 ? "done" : index === 1 ? "active" : "";
+    if (done) {
+      klass = "done";
+    } else if (failed) {
+      klass = index < activeIdx ? "done" : index === activeIdx ? "fail" : "";
+    } else if (status === "running" || status === "queued") {
+      klass = index < activeIdx ? "done" : index === activeIdx ? "active" : "";
+    }
     return `<div class="progress-step ${klass}">${escapeHtml(label)}</div>`;
   }).join("");
 }
@@ -2283,12 +2623,14 @@ function renderJobResult(job) {
     el("resultOutput").className = "result-output";
     el("resultOutput").innerHTML = `
       <div class="result-stack">
-        <div class="context-grid">
-          ${contextCard("상태", job.status)}
-          ${contextCard("모드", job.mode)}
-          ${contextCard("제공자", job.provider)}
-          ${contextCard("리서치 유형", job.research_type || "-")}
-        </div>
+        ${resultSection("현재 진행 상태", `
+          <div class="context-grid">
+            ${contextCard("상태", job.status)}
+            ${contextCard("단계", job.pipeline_stage || "queued")}
+            ${contextCard("모드", job.mode)}
+            ${contextCard("리서치 유형", job.research_type || "-")}
+          </div>
+        `, "Workflow")}
         ${job.error ? `<div class="json-fallback">${escapeHtml(job.error.type || "Error")}: ${escapeHtml(job.error.message || "")}</div>` : ""}
       </div>
     `;
@@ -2302,29 +2644,27 @@ function renderJobResult(job) {
 
   const context = summary.research_context || {};
   const markdown = review.service_blueprint_markdown || "";
+  const evidenceMarkdown = review.evidence_ledger_markdown || "";
   const quality = Array.isArray(review.quality_gates) ? review.quality_gates : [];
+  const tasks = Array.isArray(review.review_tasks) ? review.review_tasks : [];
   const links = review.obsidian_links || {};
   el("resultOutput").className = "result-output";
   el("resultOutput").innerHTML = `
     <div class="result-stack">
-      <div class="context-grid">
-        ${contextCard("리서치 유형", context.research_type || job.research_type || "-")}
-        ${contextCard("깊이", context.research_depth || job.research_depth || "-")}
-        ${contextCard("제공자", job.provider)}
-        ${contextCard("Source Priority", (context.source_priority || job.source_priority || []).join(" → ") || "-")}
-      </div>
-      <div>
-        <h3>Quality Gate</h3>
-        <div class="quality-grid">${quality.length ? quality.map(qualityCard).join("") : contextCard("상태", "품질 게이트 정보 없음")}</div>
-      </div>
-      <div>
-        <h3>Obsidian 산출물</h3>
-        <div class="artifact-grid">${renderArtifactLinks(links, summary.paths || {})}</div>
-      </div>
-      <div>
-        <h3>Service Blueprint Preview</h3>
-        <div class="markdown-preview">${renderMarkdown(markdown || "Service Blueprint preview가 없습니다.")}</div>
-      </div>
+      ${resultSection("리서치 전략", `
+        <div class="context-grid">
+          ${contextCard("리서치 유형", context.research_type || job.research_type || "-")}
+          ${contextCard("분석 깊이", context.research_depth || job.research_depth || "-")}
+          ${contextCard("도메인 초점", context.domain_focus || job.domain_focus || "-")}
+          ${contextCard("출처 전략", (context.source_priority || job.source_priority || []).join(" → ") || "-")}
+        </div>
+      `, "1. Strategy")}
+      ${resultSection("수집된 출처", renderSourceNotes(summary.paths || {}, links), "2. Sources")}
+      ${resultSection("추출된 핵심 근거", `<div class="markdown-preview">${renderMarkdown(markdownExcerpt(evidenceMarkdown, 28) || "Evidence Ledger preview가 없습니다.")}</div>`, "3. Evidence")}
+      ${resultSection("품질 점검", `<div class="quality-grid">${quality.length ? quality.map(qualityCard).join("") : contextCard("상태", "품질 게이트 정보 없음")}</div>`, "4. Quality Gate")}
+      ${resultSection("Service Blueprint", `<div class="markdown-preview">${renderMarkdown(markdown || "Service Blueprint preview가 없습니다.")}</div>`, "5. Blueprint")}
+      ${resultSection("Obsidian 저장 위치", `<div class="artifact-grid">${renderArtifactLinks(links, summary.paths || {})}</div>`, "6. Vault")}
+      ${resultSection("다음 리뷰 작업", `<div class="review-task-grid">${renderReviewTaskCards(tasks)}</div>`, "7. Human Review")}
     </div>
   `;
 }
@@ -2336,21 +2676,28 @@ function renderDryRunResult(job, summary) {
   el("resultOutput").className = "result-output";
   el("resultOutput").innerHTML = `
     <div class="result-stack">
-      <div class="context-grid">
-        ${contextCard("드라이런", "파일 쓰기 없음")}
-        ${contextCard("리서치 유형", context.research_type || job.research_type || "-")}
-        ${contextCard("깊이", context.research_depth || job.research_depth || "-")}
-        ${contextCard("예상 산출물", artifacts.length)}
-      </div>
-      <div>
-        <h3>Safety Check</h3>
-        <div class="quality-grid">${safety.map((item) => qualityCard({ status: item.status, name: item.name, detail: item.detail })).join("")}</div>
-      </div>
-      <div>
-        <h3>Planned Artifacts</h3>
-        <div class="json-fallback">${escapeHtml(artifacts.map((item) => `${item.kind}: ${item.path}`).join("\\n") || "planned artifact 없음")}</div>
-      </div>
+      ${resultSection("리서치 전략", `
+        <div class="context-grid">
+          ${contextCard("드라이런", "파일 쓰기 없음")}
+          ${contextCard("리서치 유형", context.research_type || job.research_type || "-")}
+          ${contextCard("분석 깊이", context.research_depth || job.research_depth || "-")}
+          ${contextCard("출처 전략", (context.source_priority || job.source_priority || []).join(" → ") || "-")}
+        </div>
+      `, "1. Strategy")}
+      ${resultSection("출처 수집 계획", renderPlannedArtifacts(artifacts, "source-note"), "2. Sources")}
+      ${resultSection("Obsidian 저장 계획", renderPlannedArtifacts(artifacts), "3. Vault")}
+      ${resultSection("안전 점검", `<div class="quality-grid">${safety.map((item) => qualityCard({ status: item.status, name: item.name, detail: item.detail })).join("")}</div>`, "4. Safety")}
     </div>
+  `;
+}
+
+function resultSection(title, body, kicker = "") {
+  return `
+    <section class="result-section">
+      ${kicker ? `<div class="section-kicker">${escapeHtml(kicker)}</div>` : ""}
+      <h3>${escapeHtml(title)}</h3>
+      ${body}
+    </section>
   `;
 }
 
@@ -2388,11 +2735,80 @@ function renderArtifactLinks(links, paths) {
   return rows.join("") || `<div class="json-fallback">산출물 링크가 없습니다.</div>`;
 }
 
+function renderSourceNotes(paths, links) {
+  const sourceNotes = Array.isArray(paths.source_notes) ? paths.source_notes : [];
+  if (!sourceNotes.length) {
+    return `<div class="json-fallback">source note 경로가 없습니다.</div>`;
+  }
+  return `
+    <div class="source-list">
+      ${sourceNotes.map((path, index) => {
+        const link = links[`source_notes_${index + 1}`] || "";
+        const label = `Source Note ${index + 1}`;
+        if (link) {
+          return `<a class="source-link" href="${escapeHtml(link)}">${escapeHtml(label)}<span>${escapeHtml(path)}</span></a>`;
+        }
+        return `<div class="source-link">${escapeHtml(label)}<span>${escapeHtml(path)}</span></div>`;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderPlannedArtifacts(artifacts, kind = "") {
+  const filtered = kind ? artifacts.filter((item) => item.kind === kind) : artifacts;
+  if (!filtered.length) {
+    return `<div class="json-fallback">planned artifact 없음</div>`;
+  }
+  return `
+    <ul class="workflow-list">
+      ${filtered.slice(0, 14).map((item) => `<li><strong>${escapeHtml(item.kind || "artifact")}</strong>: ${escapeHtml(item.path || "")}${item.note ? `<br><span class="action-detail">${escapeHtml(item.note)}</span>` : ""}</li>`).join("")}
+      ${filtered.length > 14 ? `<li>${escapeHtml(filtered.length - 14)}개 항목이 더 있습니다.</li>` : ""}
+    </ul>
+  `;
+}
+
+function renderReviewTaskCards(tasks) {
+  if (!tasks.length) {
+    return `
+      <div class="action-row">
+        <p class="action-title">검토 작업 없음</p>
+        <div class="action-detail">Service Blueprint와 Evidence Ledger를 읽고 필요한 노트를 reviewed로 승격하세요.</div>
+      </div>
+    `;
+  }
+  return tasks.map((task) => `
+    <div class="action-row priority-${task.severity === "fail" ? "1" : task.severity === "warn" ? "2" : ""}">
+      <p class="action-title">${escapeHtml(task.title || "검토 작업")}</p>
+      <div class="action-detail">${escapeHtml(task.kind || "review")} / ${escapeHtml(task.severity || "ok")}</div>
+    </div>
+  `).join("");
+}
+
+function markdownExcerpt(markdown, maxLines = 32) {
+  const clean = stripFrontmatter(String(markdown || ""));
+  const claimOnlyEnd = clean.indexOf("\\n## Claim Translations");
+  const focused = claimOnlyEnd >= 0 ? clean.slice(0, claimOnlyEnd) : clean;
+  const lines = focused.split("\\n").filter((line) => !line.startsWith("translation_language:"));
+  if (lines.length <= maxLines) {
+    return lines.join("\\n").trim();
+  }
+  return `${lines.slice(0, maxLines).join("\\n").trim()}\\n\\n- preview truncated`;
+}
+
+function inlineFormat(text) {
+  // Escape HTML first, then restore inline markup as safe tags
+  return escapeHtml(text)
+    .replace(/[*][*](.+?)[*][*]/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+
 function renderMarkdown(markdown) {
   const lines = stripFrontmatter(String(markdown || "")).split("\\n");
   const html = [];
   let inCode = false;
+  let inList = false;
   let tableRows = [];
+
   const flushTable = () => {
     if (!tableRows.length) return;
     html.push("<table>");
@@ -2405,9 +2821,17 @@ function renderMarkdown(markdown) {
     html.push("</table>");
     tableRows = [];
   };
+
+  const flushList = () => {
+    if (!inList) return;
+    html.push("</ul>");
+    inList = false;
+  };
+
   for (const line of lines) {
     if (line.startsWith("```")) {
       flushTable();
+      flushList();
       html.push(inCode ? "</code></pre>" : "<pre><code>");
       inCode = !inCode;
       continue;
@@ -2417,16 +2841,29 @@ function renderMarkdown(markdown) {
       continue;
     }
     if (line.startsWith("|")) {
+      flushList();
       tableRows.push(line);
       continue;
     }
     flushTable();
-    if (line.startsWith("## ")) html.push(`<h4>${escapeHtml(line.slice(3))}</h4>`);
-    else if (line.startsWith("# ")) html.push(`<h3>${escapeHtml(line.slice(2))}</h3>`);
-    else if (line.startsWith("- ")) html.push(`<ul><li>${escapeHtml(line.slice(2))}</li></ul>`);
-    else if (line.trim()) html.push(`<p>${escapeHtml(line)}</p>`);
+    if (line.startsWith("## ")) {
+      flushList();
+      html.push(`<h4>${escapeHtml(line.slice(3))}</h4>`);
+    } else if (line.startsWith("# ")) {
+      flushList();
+      html.push(`<h3>${escapeHtml(line.slice(2))}</h3>`);
+    } else if (line.startsWith("- ")) {
+      if (!inList) { html.push("<ul>"); inList = true; }
+      html.push(`<li>${inlineFormat(line.slice(2))}</li>`);
+    } else if (line.trim()) {
+      flushList();
+      html.push(`<p>${inlineFormat(line)}</p>`);
+    } else {
+      flushList();
+    }
   }
   flushTable();
+  flushList();
   if (inCode) html.push("</code></pre>");
   return html.join("");
 }
@@ -2525,6 +2962,7 @@ function escapeHtml(value) {
 function init() {
   const storedToken = localStorage.getItem("researchAgentPortalToken") || "";
   el("tokenInput").value = storedToken;
+  renderWorkflow();
   document.querySelectorAll(".preset-button").forEach((button) => {
     button.addEventListener("click", () => applyPreset(button.dataset.preset));
   });

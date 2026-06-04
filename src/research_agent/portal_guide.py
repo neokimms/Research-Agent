@@ -26,11 +26,11 @@ def render_portal_guide_html() -> str:
   <main class="guide-page">
     <section class="guide-hero">
       <p class="eyebrow">무엇을 하는 도구인가요?</p>
-      <h2>IT 리서치를 실행하고, 결과를 읽을 수 있는 리뷰 화면으로 확인한 뒤 Obsidian Vault에 저장하는 포털입니다.</h2>
+      <h2>Research Workflow를 따라 IT 리서치를 실행하고, 결과를 Obsidian 리뷰 단계까지 이어주는 포털입니다.</h2>
       <p>
         이 포털은 공식 문서, 표준, 논문 중심의 Research Agent를 브라우저에서 실행하기 위한 화면입니다.
-        리서치 유형 preset으로 출처 우선순위를 정하고, 완료 후에는 Service Blueprint 미리보기, Quality Gate,
-        리서치 리뷰 작업, Obsidian 산출물 링크를 한 화면에서 확인합니다.
+        화면은 목표 정의, 리서치 전략, 출처 수집, 근거 추출, Service Blueprint 합성, Obsidian 리뷰 흐름을 기준으로 구성됩니다.
+        시스템 상태는 접힌 패널로 분리되어 있고, 사용자는 먼저 리서치 질문과 결과 검토 흐름에 집중할 수 있습니다.
       </p>
     </section>
 
@@ -41,20 +41,24 @@ def render_portal_guide_html() -> str:
       </div>
       <ol class="step-list">
         <li>
-          <strong>리서치 유형을 먼저 고릅니다.</strong>
-          <span>IT 아키텍처, 논문 합성, 표준·보안, 시장 조사, 공식 문서 중 하나를 선택하면 출처 우선순위와 기본 깊이가 맞춰집니다.</span>
+          <strong>상단의 Research Workflow를 확인합니다.</strong>
+          <span>목표 정의에서 Obsidian 리뷰까지 어떤 순서로 진행되는지 먼저 봅니다.</span>
         </li>
         <li>
-          <strong>주제를 한 문장으로 입력합니다.</strong>
+          <strong>리서치 질문 / 목표를 한 문장으로 입력합니다.</strong>
           <span>예: OpenAI Agents SDK와 LangGraph 비교, Agentic RAG 구조 분류와 실서비스 기본형.</span>
         </li>
         <li>
-          <strong>드라이런을 켠 채로 실행합니다.</strong>
-          <span>드라이런은 Vault에 파일을 쓰지 않고 생성 예정 경로와 실행 계획만 보여줍니다.</span>
+          <strong>리서치 전략을 고릅니다.</strong>
+          <span>IT 아키텍처, 논문 합성, 표준·보안, 시장 조사, 공식 문서 중 하나를 선택하면 출처 우선순위와 기본 깊이가 맞춰집니다.</span>
         </li>
         <li>
-          <strong>결과 패널에서 계획 또는 산출물을 확인합니다.</strong>
-          <span>드라이런은 planned artifacts를, live run은 Service Blueprint preview, Quality Gate, Obsidian 링크를 보여줍니다.</span>
+          <strong>드라이런을 켠 채로 실행합니다.</strong>
+          <span>드라이런은 Vault에 파일을 쓰지 않고 출처 수집 계획, 저장 계획, 안전 점검만 보여줍니다.</span>
+        </li>
+        <li>
+          <strong>결과 검토 패널을 workflow 순서대로 읽습니다.</strong>
+          <span>수집된 출처, 추출된 핵심 근거, 품질 점검, Service Blueprint, Obsidian 저장 위치, 다음 리뷰 작업을 순서대로 확인합니다.</span>
         </li>
         <li>
           <strong>실제 저장이 필요할 때만 드라이런을 끕니다.</strong>
@@ -74,11 +78,15 @@ def render_portal_guide_html() -> str:
       </div>
       <div class="term-grid">
         <article>
-          <h3>실행</h3>
-          <p>리서치 유형, 주제, 깊이, provider, bilingual 여부를 정하는 영역입니다. 입력한 주제는 topic 또는 objective로 처리됩니다.</p>
+          <h3>Research Workflow</h3>
+          <p>목표 정의, 리서치 전략, 출처 수집, 근거 추출, Blueprint 합성, Obsidian 리뷰를 한 줄로 보여주는 상단 흐름입니다.</p>
         </article>
         <article>
-          <h3>리서치 유형</h3>
+          <h3>리서치 요청</h3>
+          <p>리서치 질문 / 목표, 전략 preset, 분석 깊이, 도메인 초점, 결과 언어를 정하는 핵심 입력 영역입니다.</p>
+        </article>
+        <article>
+          <h3>리서치 전략</h3>
           <p>preset 버튼입니다. 논문 합성은 papers를 먼저 보고, IT 아키텍처와 공식 문서는 official-docs를 먼저 봅니다.</p>
         </article>
         <article>
@@ -86,24 +94,20 @@ def render_portal_guide_html() -> str:
           <p>빠른 스캔, 표준 분석, 심층 분석을 고릅니다. 깊이에 따라 기본 논문 수가 달라지고, 필요하면 직접 조정할 수 있습니다.</p>
         </article>
         <article>
-          <h3>제공자</h3>
-          <p><code>auto</code>는 OpenAI key가 있으면 OpenAI, 없으면 Gemini를 선택합니다. 특정 provider를 쓰려면 <code>openai</code> 또는 <code>gemini</code>를 고릅니다.</p>
+          <h3>결과 형식</h3>
+          <p>기본값은 한글 보고서와 원문 병기입니다. 영어 중심 산출물이 필요하면 원본/한글 병기를 끕니다.</p>
         </article>
         <article>
-          <h3>드라이런</h3>
-          <p>Vault에 쓰지 않는 preview 모드입니다. 운영 전 기본값으로 권장합니다.</p>
+          <h3>실행 안전 설정</h3>
+          <p>provider, 논문 수, 드라이런, 오프라인 검증은 고급 설정으로 접어 두었습니다. 대부분은 기본값으로 시작해도 됩니다.</p>
         </article>
         <article>
-          <h3>오프라인</h3>
-          <p>LLM/API 수집을 건너뛰고 내장 fallback으로 산출물을 만듭니다. UI와 Obsidian writer 검증에 좋습니다.</p>
+          <h3>시스템 상태</h3>
+          <p>Provider, Vault, Vault Health, Vault 정비, 작업 저장소를 확인하는 운영 정보입니다. 기본 화면에서는 접힌 상태로 둡니다.</p>
         </article>
         <article>
-          <h3>원본/한글 병기</h3>
-          <p>켜면 Service Blueprint와 Source Note에 원문과 한국어 번역을 함께 남깁니다. 끄면 영어 중심 산출물로 토큰과 노트 길이를 줄입니다.</p>
-        </article>
-        <article>
-          <h3>결과</h3>
-          <p>raw JSON 대신 사람이 읽을 수 있는 리뷰 화면입니다. Quality Gate, Obsidian 링크, Service Blueprint preview를 확인합니다.</p>
+          <h3>결과 검토</h3>
+          <p>raw JSON 대신 workflow 순서로 결과를 보여줍니다. 출처, 근거, Quality Gate, Blueprint, Obsidian 링크, 다음 리뷰 작업을 확인합니다.</p>
         </article>
         <article>
           <h3>리서치 리뷰</h3>

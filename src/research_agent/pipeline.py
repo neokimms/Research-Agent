@@ -48,6 +48,8 @@ class ResearchPipeline:
         offline: bool = False,
         max_papers_per_source: int = 2,
         rerun_of: str | None = None,
+        domain_focus: str = "",
+        on_stage: object = None,
     ) -> RunArtifacts:
         _validate_topic(topic)
         timestamp = now_local(self.settings.app.timezone)
@@ -55,7 +57,15 @@ class ResearchPipeline:
         date_prefix = timestamp.strftime("%Y-%m-%d")
         slug = slugify(topic)
 
+        def _emit(stage: str) -> None:
+            if callable(on_stage):
+                try:
+                    on_stage(stage)
+                except Exception:
+                    pass
+
         self.writer.ensure_structure()
+        _emit("collecting")
         warnings: list[RunWarning] = []
         sources = [
             normalize_source_record(source)
@@ -77,11 +87,15 @@ class ResearchPipeline:
             offline=offline,
         )
 
+        _emit("synthesizing")
         evidence_filename = f"{date_prefix}_{slug}_evidence-ledger.md"
         evidence_path_preview = self.writer.safe_path(f"{self.settings.obsidian.evidence_dir}/{evidence_filename}")
         evidence_markdown_for_synthesis = render_evidence_synthesis_context(topic, evidence, checked_at=checked_at)
 
-        blueprint_markdown = self._synthesize_blueprint(topic, evidence_markdown_for_synthesis, sources, checked_at, offline)
+        blueprint_markdown = self._synthesize_blueprint(
+            topic, evidence_markdown_for_synthesis, sources, checked_at, offline,
+            domain_focus=domain_focus,
+        )
         quality_gates = evaluate_quality_gates(
             self.settings.quality_gates,
             sources=sources,
@@ -92,6 +106,7 @@ class ResearchPipeline:
         )
         self._raise_on_quality_gate_failures(quality_gates)
 
+        _emit("writing")
         created_paths: list[Path] = []
         try:
             source_paths: list[Path] = []
@@ -250,22 +265,33 @@ class ResearchPipeline:
         max_papers_per_source: int,
         warnings: list[RunWarning] | None = None,
     ) -> list[SourceRecord]:
+        priority = self.settings.sources.priority
+        # An empty priority list means "all sources" — fall back to default order.
+        collect_official = not priority or "official-docs" in priority
+        collect_standards = not priority or "standards" in priority
+        collect_papers = not priority or "papers" in priority
+
         records: list[SourceRecord] = []
         provider = select_llm_provider(self.settings)
-        if offline:
-            records.extend(seed_official_sources(topic, self.settings.sources))
-        else:
-            records.extend(
-                collect_official_doc_sources(
-                    topic,
-                    self.settings.sources,
-                    api_key=provider.api_key,
-                    model=self._model_for(provider, "planner"),
-                    provider=provider.provider,
+
+        if collect_official:
+            if offline:
+                records.extend(seed_official_sources(topic, self.settings.sources))
+            else:
+                records.extend(
+                    collect_official_doc_sources(
+                        topic,
+                        self.settings.sources,
+                        api_key=provider.api_key,
+                        model=self._model_for(provider, "planner"),
+                        provider=provider.provider,
+                    )
                 )
-            )
-        records.extend(seed_standard_sources(topic, self.settings.sources))
-        if not offline:
+
+        if collect_standards:
+            records.extend(seed_standard_sources(topic, self.settings.sources))
+
+        if collect_papers and not offline:
             records.extend(
                 collect_paper_sources(
                     topic,
@@ -274,6 +300,7 @@ class ResearchPipeline:
                     warnings=warnings,
                 )
             )
+
         return records
 
     def _planned_sources(self, topic: str, *, offline: bool, max_papers_per_source: int) -> list[SourceRecord]:
@@ -365,6 +392,8 @@ class ResearchPipeline:
         sources: list[SourceRecord],
         checked_at: str,
         offline: bool,
+        *,
+        domain_focus: str = "",
     ) -> str:
         if offline:
             return render_fallback_blueprint(
@@ -386,8 +415,12 @@ class ResearchPipeline:
             )
 
         if provider.provider == "gemini":
-            return self._synthesize_blueprint_with_gemini(topic, evidence_markdown, sources, checked_at, provider)
-        return self._synthesize_blueprint_with_openai(topic, evidence_markdown, sources, checked_at, provider)
+            return self._synthesize_blueprint_with_gemini(
+                topic, evidence_markdown, sources, checked_at, provider, domain_focus=domain_focus
+            )
+        return self._synthesize_blueprint_with_openai(
+            topic, evidence_markdown, sources, checked_at, provider, domain_focus=domain_focus
+        )
 
     def _synthesize_blueprint_with_openai(
         self,
@@ -396,6 +429,8 @@ class ResearchPipeline:
         sources: list[SourceRecord],
         checked_at: str,
         provider: ProviderSelection,
+        *,
+        domain_focus: str = "",
     ) -> str:
         client = OpenAIResponsesClient(
             api_key=provider.api_key or "",
@@ -403,8 +438,15 @@ class ResearchPipeline:
         )
         try:
             response = client.create(
-                input_text=synthesis_prompt(topic, evidence_markdown, bilingual=self.settings.report.bilingual),
-                instructions=synthesis_instructions(bilingual=self.settings.report.bilingual),
+                input_text=synthesis_prompt(
+                    topic, evidence_markdown,
+                    bilingual=self.settings.report.bilingual,
+                    domain_focus=domain_focus,
+                ),
+                instructions=synthesis_instructions(
+                    bilingual=self.settings.report.bilingual,
+                    domain_focus=domain_focus,
+                ),
                 reasoning_effort="medium",
             )
             markdown = output_text(response)
@@ -442,6 +484,8 @@ class ResearchPipeline:
         sources: list[SourceRecord],
         checked_at: str,
         provider: ProviderSelection,
+        *,
+        domain_focus: str = "",
     ) -> str:
         client = GeminiGenerateClient(
             api_key=provider.api_key or "",
@@ -449,8 +493,15 @@ class ResearchPipeline:
         )
         try:
             response = client.generate(
-                input_text=synthesis_prompt(topic, evidence_markdown, bilingual=self.settings.report.bilingual),
-                instructions=synthesis_instructions(bilingual=self.settings.report.bilingual),
+                input_text=synthesis_prompt(
+                    topic, evidence_markdown,
+                    bilingual=self.settings.report.bilingual,
+                    domain_focus=domain_focus,
+                ),
+                instructions=synthesis_instructions(
+                    bilingual=self.settings.report.bilingual,
+                    domain_focus=domain_focus,
+                ),
                 model=self.settings.gemini.models.synthesis,
             )
             markdown = gemini_output_text(response)

@@ -190,7 +190,10 @@ class PortalE2ESmokeScriptTests(unittest.TestCase):
     def test_research_portal_static_is_verified_from_assets(self) -> None:
         html = """
         <h1>리서치 에이전트 포털</h1>
+        <section>Research Workflow <div id="workflowTrack"></div></section>
+        <details><strong id="systemSummary"></strong></details>
         <form id="runForm">
+          <label>리서치 질문 / 목표</label>
           <select id="providerInput"></select>
           <div id="presetButtons"></div>
           <select id="depthInput"></select>
@@ -206,7 +209,7 @@ class PortalE2ESmokeScriptTests(unittest.TestCase):
         guide = """
         <h1>리서치 에이전트 포털 가이드</h1>
         <h2>가장 안전한 실행 순서</h2>
-        <h3>리서치 유형</h3>
+        <h3>리서치 전략</h3>
         <h2>상황별 권장 옵션</h2>
         <p>Quality Gate</p>
         <h2>Research Agent Portal과 PM Portal의 차이</h2>
@@ -214,6 +217,7 @@ class PortalE2ESmokeScriptTests(unittest.TestCase):
         js = """
         async function submitRun() {}
         function applyPreset() {}
+        function renderWorkflow() {}
         function renderJobResult() {}
         function renderMarkdown() {}
         function renderReviewActions() {}

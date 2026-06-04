@@ -464,7 +464,11 @@ def _verify_research_portal_static(base_url: str, *, bearer_token: str | None = 
         html,
         [
             "리서치 에이전트 포털",
+            "Research Workflow",
+            "리서치 질문 / 목표",
             'id="runForm"',
+            'id="workflowTrack"',
+            'id="systemSummary"',
             'id="providerInput"',
             'id="presetButtons"',
             'id="depthInput"',
@@ -484,7 +488,7 @@ def _verify_research_portal_static(base_url: str, *, bearer_token: str | None = 
         [
             "리서치 에이전트 포털 가이드",
             "가장 안전한 실행 순서",
-            "리서치 유형",
+            "리서치 전략",
             "상황별 권장 옵션",
             "Quality Gate",
             "Research Agent Portal과 PM Portal의 차이",
@@ -496,6 +500,7 @@ def _verify_research_portal_static(base_url: str, *, bearer_token: str | None = 
         [
             "async function submitRun",
             "function applyPreset",
+            "function renderWorkflow",
             "function renderJobResult",
             "function renderMarkdown",
             "function renderReviewActions",
