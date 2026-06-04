@@ -1204,7 +1204,8 @@ _PORTAL_HTML = """<!doctype html>
     <div class="top-actions">
       <a class="nav-button" href="/guide">가이드</a>
       <input id="tokenInput" class="token-input" type="password" autocomplete="off" placeholder="Bearer 토큰">
-      <button id="refreshButton" type="button">새로고침</button>
+      <button id="refreshButton" type="button" title="Provider, Vault 상태, 후속 작업, 작업 목록을 다시 불러옵니다.">상태 갱신</button>
+      <span id="refreshFeedback" class="refresh-feedback" aria-live="polite"></span>
     </div>
   </header>
 
@@ -1446,6 +1447,13 @@ h2 {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.refresh-feedback {
+  min-width: 78px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .nav-button {
@@ -2301,7 +2309,8 @@ _PORTAL_JS = """
 const state = {
   currentJobId: "",
   pollTimer: null,
-  preset: "architecture"
+  preset: "architecture",
+  isRefreshing: false
 };
 
 const WORKFLOW_STEPS = [
@@ -2455,45 +2464,63 @@ function renderNextActions(payload) {
   `).join("");
 }
 
-async function refreshStatus() {
+async function refreshStatus(options = {}) {
+  if (state.isRefreshing) {
+    return;
+  }
+  state.isRefreshing = true;
+  setRefreshState(true, "갱신 중");
+  let feedbackMessage = "";
   try {
-    const health = await requestJson("/health");
-    setBadge("apiBadge", "온라인", "ok");
-    el("providerStatus").textContent = `${health.provider}${health.provider_available ? "" : " 사용 불가"}`;
-    el("vaultStatus").textContent = health.vault_path || "-";
+    try {
+      const health = await requestJson("/health");
+      setBadge("apiBadge", "온라인", "ok");
+      el("providerStatus").textContent = `${health.provider}${health.provider_available ? "" : " 사용 불가"}`;
+      el("vaultStatus").textContent = health.vault_path || "-";
+    } catch (error) {
+      setBadge("apiBadge", "오프라인", "fail");
+      printResult("오류", error.payload || error.message);
+    }
+    updateSystemSummary();
+
+    try {
+      const vault = await requestJson("/vault-health");
+      el("healthStatus").textContent = vault.status || "-";
+      el("healthStatus").className = (vault.status || "").toLowerCase();
+    } catch (error) {
+      el("healthStatus").textContent = "인증";
+    }
+    updateSystemSummary();
+
+    try {
+      const actions = await requestJson("/next-actions");
+      renderNextActions(actions);
+    } catch (error) {
+      el("actionStatus").textContent = "인증";
+      el("actionCount").textContent = "-";
+      el("actionList").innerHTML = `
+        <div class="action-row">
+          <p class="action-title">후속 작업을 불러올 수 없습니다</p>
+          <div class="action-detail">${escapeHtml(error.message)}</div>
+        </div>
+      `;
+    }
+    updateSystemSummary();
+
+    await refreshJobStoreHealth();
+    await refreshJobs();
+    if (options.reloadCurrentJob && state.currentJobId) {
+      await loadJob(state.currentJobId);
+    }
+    updateSystemSummary();
+    feedbackMessage = `${formatTime(new Date())} 갱신됨`;
   } catch (error) {
-    setBadge("apiBadge", "오프라인", "fail");
+    feedbackMessage = "갱신 실패";
     printResult("오류", error.payload || error.message);
+  } finally {
+    setRefreshState(false, feedbackMessage || "갱신 완료");
+    state.isRefreshing = false;
   }
-  updateSystemSummary();
-
-  try {
-    const vault = await requestJson("/vault-health");
-    el("healthStatus").textContent = vault.status || "-";
-    el("healthStatus").className = (vault.status || "").toLowerCase();
-  } catch (error) {
-    el("healthStatus").textContent = "인증";
-  }
-  updateSystemSummary();
-
-  try {
-    const actions = await requestJson("/next-actions");
-    renderNextActions(actions);
-  } catch (error) {
-    el("actionStatus").textContent = "인증";
-    el("actionCount").textContent = "-";
-    el("actionList").innerHTML = `
-      <div class="action-row">
-        <p class="action-title">후속 작업을 불러올 수 없습니다</p>
-        <div class="action-detail">${escapeHtml(error.message)}</div>
-      </div>
-    `;
-  }
-  updateSystemSummary();
-
-  await refreshJobStoreHealth();
-  await refreshJobs();
-  updateSystemSummary();
 }
 
 function updateSystemSummary() {
@@ -2502,6 +2529,17 @@ function updateSystemSummary() {
   const actions = el("actionStatus").textContent || "-";
   const jobs = el("jobStoreStatus").textContent || "-";
   el("systemSummary").textContent = `${provider} / Vault ${health} / 정비 ${actions} / Jobs ${jobs}`;
+}
+
+function setRefreshState(isLoading, message = "") {
+  const button = el("refreshButton");
+  button.disabled = isLoading;
+  button.textContent = isLoading ? "갱신 중" : "상태 갱신";
+  el("refreshFeedback").textContent = message;
+}
+
+function formatTime(date) {
+  return date.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 function renderReviewActions(job) {
@@ -2968,7 +3006,7 @@ function init() {
   });
   applyPreset(state.preset);
   el("runForm").addEventListener("submit", submitRun);
-  el("refreshButton").addEventListener("click", refreshStatus);
+  el("refreshButton").addEventListener("click", () => refreshStatus({ reloadCurrentJob: true }));
   refreshStatus();
 }
 

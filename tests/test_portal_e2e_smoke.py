@@ -192,6 +192,7 @@ class PortalE2ESmokeScriptTests(unittest.TestCase):
         <h1>리서치 에이전트 포털</h1>
         <section>Research Workflow <div id="workflowTrack"></div></section>
         <details><strong id="systemSummary"></strong></details>
+        <button id="refreshButton">상태 갱신</button><span id="refreshFeedback"></span>
         <form id="runForm">
           <label>리서치 질문 / 목표</label>
           <select id="providerInput"></select>
@@ -218,6 +219,7 @@ class PortalE2ESmokeScriptTests(unittest.TestCase):
         async function submitRun() {}
         function applyPreset() {}
         function renderWorkflow() {}
+        function setRefreshState() {}
         function renderJobResult() {}
         function renderMarkdown() {}
         function renderReviewActions() {}
