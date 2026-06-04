@@ -187,6 +187,8 @@ class ResearchPipeline:
                 render_final_report(
                     topic,
                     blueprint_markdown=blueprint_markdown,
+                    evidence=evidence,
+                    sources=sources,
                     source_paths=[str(path) for path in source_paths],
                     evidence_path=str(evidence_path),
                     blueprint_path=str(blueprint_path),
@@ -194,6 +196,8 @@ class ResearchPipeline:
                     run_path=str(run_path_preview),
                     checked_at=checked_at,
                     vault_path=str(self.writer.vault_path),
+                    quality_gates=quality_gates,
+                    research_type=normalized_research_type,
                     bilingual=self.settings.report.bilingual,
                 ),
             )
