@@ -72,11 +72,13 @@ class PipelineTests(unittest.TestCase):
             final_report = Path(artifacts.final_report).read_text(encoding="utf-8")
             self.assertIn("type: final-report", final_report)
             self.assertIn("# Final Report: agentic RAG", final_report)
-            self.assertIn("## Executive Summary", final_report)
-            self.assertIn("## Key Findings", final_report)
-            self.assertIn("## Evidence Table", final_report)
+            self.assertIn("## 한국어 보고서", final_report)
+            self.assertIn("## Original Report", final_report)
+            self.assertIn("### 2. 핵심 판단", final_report)
+            self.assertIn("### 2. Key Assessment", final_report)
+            self.assertIn("### Evidence Table", final_report)
             self.assertIn("E001", final_report)
-            self.assertIn("Evidence extraction mode is `fallback`", final_report)
+            self.assertIn("근거 추출 모드: `fallback`", final_report)
             self.assertIn("[[30_Service-Blueprints/", final_report)
             self.assertIn("[[50_Evidence-Ledger/", final_report)
 
@@ -244,8 +246,9 @@ class PipelineTests(unittest.TestCase):
             final_report = Path(artifacts.final_report).read_text(encoding="utf-8")
             self.assertIn("type: final-report", final_report)
             self.assertIn('research_type: "market"', final_report)
-            self.assertIn("## Profile-Specific Interpretation", final_report)
-            self.assertIn("market-research draft", final_report)
+            self.assertIn("## 한국어 보고서", final_report)
+            self.assertIn("시장조사 초안", final_report)
+            self.assertIn("## Original Report", final_report)
 
     def test_run_note_is_written_once_after_bilingual_audit(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

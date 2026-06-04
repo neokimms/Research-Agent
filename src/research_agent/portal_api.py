@@ -1712,6 +1712,41 @@ h2 {
   color: var(--accent-strong);
 }
 
+.language-report {
+  display: grid;
+  gap: 12px;
+}
+
+.language-tab-list {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.language-tab {
+  min-height: 34px;
+  padding: 0 12px;
+  border-color: var(--line);
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.language-tab.active {
+  border-color: var(--accent);
+  background: var(--soft);
+  color: var(--accent-strong);
+}
+
+.language-panel {
+  display: none;
+}
+
+.language-panel.active {
+  display: block;
+}
+
 .report-modal-content {
   min-height: 0;
   overflow: auto;
@@ -2510,13 +2545,19 @@ button.primary:hover {
 }
 
 .markdown-preview h3,
-.markdown-preview h4 {
+.markdown-preview h4,
+.markdown-preview h5 {
   margin: 16px 0 8px;
 }
 
 .markdown-preview h3:first-child,
-.markdown-preview h4:first-child {
+.markdown-preview h4:first-child,
+.markdown-preview h5:first-child {
   margin-top: 0;
+}
+
+.markdown-preview h5 {
+  font-size: 15px;
 }
 
 .markdown-preview p,
@@ -3038,7 +3079,7 @@ function renderJobResult(job) {
         `, "Summary")}
       </div>
     `,
-    final: `<div class="result-stack">${resultSection("최종 보고서", `<div class="markdown-preview">${renderMarkdown(finalMarkdown || markdown || "최종 보고서 preview가 없습니다.")}</div>`, "Final Report")}</div>`,
+    final: `<div class="result-stack">${resultSection("최종 보고서", renderLanguageTabbedMarkdown(finalMarkdown || markdown || "최종 보고서 preview가 없습니다."), "Final Report")}</div>`,
     blueprint: `<div class="result-stack">${resultSection("Service Blueprint", `<div class="markdown-preview">${renderMarkdown(markdown || "Service Blueprint preview가 없습니다.")}</div>`, "5. Blueprint")}</div>`,
     evidence: `
       <div class="result-stack">
@@ -3191,6 +3232,7 @@ function renderReportModal(tabKey = "summary") {
     node.addEventListener("click", () => renderReportModal(node.dataset.reportTab));
   });
   bindReportPreviewButtons(el("reportModalContent"));
+  bindLanguageTabs(el("reportModalContent"));
 }
 
 function renderArtifactLinks(links, paths) {
@@ -3303,6 +3345,56 @@ function inlineFormat(text) {
     .replace(/`([^`]+)`/g, "<code>$1</code>");
 }
 
+function renderLanguageTabbedMarkdown(markdown) {
+  const clean = stripFrontmatter(String(markdown || ""));
+  const korean = extractMarkdownSection(clean, "한국어 보고서");
+  const original = extractMarkdownSection(clean, "Original Report");
+  if (!korean || !original) {
+    return `<div class="markdown-preview">${renderMarkdown(markdown)}</div>`;
+  }
+  return `
+    <div class="language-report" data-language-tabs>
+      <div class="language-tab-list" role="tablist" aria-label="보고서 언어 선택">
+        <button class="language-tab active" type="button" role="tab" aria-selected="true" data-language-tab="ko">한국어 번역</button>
+        <button class="language-tab" type="button" role="tab" aria-selected="false" data-language-tab="original">원본</button>
+      </div>
+      <div class="language-panel markdown-preview active" data-language-panel="ko">${renderMarkdown(korean)}</div>
+      <div class="language-panel markdown-preview" data-language-panel="original">${renderMarkdown(original)}</div>
+    </div>
+  `;
+}
+
+function extractMarkdownSection(markdown, heading) {
+  const lines = String(markdown || "").split("\\n");
+  const start = lines.findIndex((line) => line.trim() === `## ${heading}`);
+  if (start < 0) return "";
+  const collected = [];
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line.startsWith("## ")) break;
+    collected.push(line);
+  }
+  return collected.join("\\n").trim();
+}
+
+function bindLanguageTabs(root) {
+  root.querySelectorAll("[data-language-tabs]").forEach((group) => {
+    group.querySelectorAll("[data-language-tab]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const key = button.dataset.languageTab || "ko";
+        group.querySelectorAll("[data-language-tab]").forEach((node) => {
+          const active = node.dataset.languageTab === key;
+          node.classList.toggle("active", active);
+          node.setAttribute("aria-selected", active ? "true" : "false");
+        });
+        group.querySelectorAll("[data-language-panel]").forEach((panel) => {
+          panel.classList.toggle("active", panel.dataset.languagePanel === key);
+        });
+      });
+    });
+  });
+}
+
 function renderMarkdown(markdown) {
   const lines = stripFrontmatter(String(markdown || "")).split("\\n");
   const html = [];
@@ -3347,7 +3439,10 @@ function renderMarkdown(markdown) {
       continue;
     }
     flushTable();
-    if (line.startsWith("## ")) {
+    if (line.startsWith("### ")) {
+      flushList();
+      html.push(`<h5>${escapeHtml(line.slice(4))}</h5>`);
+    } else if (line.startsWith("## ")) {
       flushList();
       html.push(`<h4>${escapeHtml(line.slice(3))}</h4>`);
     } else if (line.startsWith("# ")) {

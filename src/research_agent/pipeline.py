@@ -186,7 +186,6 @@ class ResearchPipeline:
                 f"{date_prefix}_{slug}_final-report.md",
                 render_final_report(
                     topic,
-                    blueprint_markdown=blueprint_markdown,
                     evidence=evidence,
                     sources=sources,
                     source_paths=[str(path) for path in source_paths],

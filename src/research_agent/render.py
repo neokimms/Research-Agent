@@ -487,7 +487,6 @@ translation_language: ko
 def render_final_report(
     topic: str,
     *,
-    blueprint_markdown: str,
     evidence: EvidenceBundle,
     sources: list[SourceRecord],
     source_paths: list[str],
@@ -504,22 +503,26 @@ def render_final_report(
     profile = get_report_profile(research_type)
     profile_label_korean = _profile_label_korean(profile)
     source_links = "\n".join(f"- {_wikilink(path, vault_path)}" for path in source_paths) or "- No source notes generated."
-    source_count = len(sources)
-    claim_count = len(evidence.claims)
     gate_summary = _quality_gate_summary(quality_gates or [])
-    blueprint_summary = _blueprint_review_summary(blueprint_markdown)
     confidence_summary = _confidence_summary(evidence)
-    executive_original = (
-        f"This final report summarizes `{topic}` as a {profile.label} review. "
-        f"The run collected {source_count} source record(s), extracted {claim_count} evidence claim(s), "
-        f"and produced quality gate status `{gate_summary}`. "
-        f"Treat the Service Blueprint as the implementation draft and this note as the reviewable final report."
+    korean_report = _final_report_korean_report(
+        topic,
+        profile=profile,
+        profile_label_korean=profile_label_korean,
+        evidence=evidence,
+        sources=sources,
+        quality_gates=quality_gates or [],
+        gate_summary=gate_summary,
+        confidence_summary=confidence_summary,
     )
-    executive_korean = (
-        f"이 최종 보고서는 `{topic}`을(를) {profile_label_korean} 관점에서 정리한 검토 보고서입니다. "
-        f"이번 실행에서는 출처 {source_count}개, 근거 주장 {claim_count}개를 수집했고, "
-        f"품질 게이트 상태는 `{gate_summary}`입니다. "
-        f"Service Blueprint는 구현 초안으로, 이 노트는 사람이 검토할 대표 최종 보고서로 사용하세요."
+    original_report = _final_report_original_report(
+        topic,
+        profile=profile,
+        evidence=evidence,
+        sources=sources,
+        quality_gates=quality_gates or [],
+        gate_summary=gate_summary,
+        confidence_summary=confidence_summary,
     )
     return f"""---
 type: final-report
@@ -534,49 +537,25 @@ generated_by: research-agent
 
 # Final Report: {topic}
 
-## Executive Summary
+## 한국어 보고서
 
-{_paired_block(executive_original, executive_korean, bilingual=bilingual)}
+{korean_report}
 
-## Key Findings
+{_original_report_section(original_report, bilingual=bilingual)}
 
-{_final_report_key_findings(evidence, bilingual=bilingual)}
+## 근거 부록 / Evidence Appendix
 
-## Evidence Table
+### Evidence Table
 
 {_final_report_evidence_table(evidence)}
 
-## Source Coverage
+### Source Coverage
 
 {_source_coverage_summary(sources)}
 
-## Profile-Specific Interpretation
+### Quality Gates
 
-{_final_report_profile_interpretation(profile, evidence, sources, bilingual=bilingual)}
-
-## Blueprint Cross-Check
-
-{_paired_block(blueprint_summary[0], blueprint_summary[1], bilingual=bilingual)}
-
-## Quality And Limits
-
-{_final_report_quality_section(
-        evidence,
-        quality_gates=quality_gates or [],
-        confidence_summary=confidence_summary,
-        bilingual=bilingual,
-    )}
-
-## Recommended Review Actions
-
-{_final_report_review_actions(
-        evidence,
-        sources=sources,
-        quality_gates=quality_gates or [],
-        profile_label=profile.label,
-        profile_label_korean=profile_label_korean,
-        bilingual=bilingual,
-    )}
+{_quality_gate_table(quality_gates or [])}
 
 ## Obsidian Links
 
@@ -591,16 +570,312 @@ generated_by: research-agent
 """
 
 
-def _paired_block(original: str, korean: str, *, bilingual: bool) -> str:
+def _final_report_korean_report(
+    topic: str,
+    *,
+    profile: ReportProfile,
+    profile_label_korean: str,
+    evidence: EvidenceBundle,
+    sources: list[SourceRecord],
+    quality_gates: list[QualityGateResult],
+    gate_summary: str,
+    confidence_summary: str,
+) -> str:
+    verdict_ko, _ = _final_report_verdict(evidence, quality_gates)
+    interpretation = _profile_interpretation_texts(profile, sources, evidence)[1]
+    source_mix = _source_mix_text(sources, korean=True)
+    claim_summary = _claim_summary_lines(evidence, korean=True)
+    limits = _quality_limit_lines(evidence, sources, quality_gates, korean=True)
+    actions = _review_action_lines(evidence, sources, quality_gates, profile_label_korean, korean=True)
+    return f"""### 1. 조사 개요
+
+- 조사 주제: {topic}
+- 보고서 유형: {profile_label_korean}
+- 보고서 판정: {verdict_ko}
+- 수집 현황: {source_mix}
+- 품질 게이트: {gate_summary}
+- 주장 신뢰도 분포: {confidence_summary}
+
+### 2. 핵심 판단
+
+{_korean_conclusion(profile, profile_label_korean, evidence, quality_gates)}
+
+### 3. 확인된 근거 요약
+
+{claim_summary}
+
+### 4. 분야별 해석
+
+{interpretation}
+
+### 5. 품질 판단과 한계
+
+{limits}
+
+### 6. 후속 검토 작업
+
+{actions}"""
+
+
+def _final_report_original_report(
+    topic: str,
+    *,
+    profile: ReportProfile,
+    evidence: EvidenceBundle,
+    sources: list[SourceRecord],
+    quality_gates: list[QualityGateResult],
+    gate_summary: str,
+    confidence_summary: str,
+) -> str:
+    _, verdict_en = _final_report_verdict(evidence, quality_gates)
+    interpretation = _profile_interpretation_texts(profile, sources, evidence)[0]
+    source_mix = _source_mix_text(sources, korean=False)
+    claim_summary = _claim_summary_lines(evidence, korean=False)
+    limits = _quality_limit_lines(evidence, sources, quality_gates, korean=False)
+    actions = _review_action_lines(evidence, sources, quality_gates, profile.label, korean=False)
+    return f"""### 1. Research Overview
+
+- Research topic: {topic}
+- Report type: {profile.label}
+- Report verdict: {verdict_en}
+- Source coverage: {source_mix}
+- Quality gate status: {gate_summary}
+- Claim confidence distribution: {confidence_summary}
+
+### 2. Key Assessment
+
+{_original_conclusion(profile, evidence, quality_gates)}
+
+### 3. Evidence-Based Findings
+
+{claim_summary}
+
+### 4. Profile-Specific Interpretation
+
+{interpretation}
+
+### 5. Quality Judgment And Limits
+
+{limits}
+
+### 6. Review Actions
+
+{actions}"""
+
+
+def _original_report_section(original_report: str, *, bilingual: bool) -> str:
     if not bilingual:
-        return original.strip() or "No content."
-    return f"""**원본**
+        return ""
+    return f"""## Original Report
 
-{original.strip() or "No content."}
+{original_report}"""
 
-**한국어 번역**
 
-{korean.strip() or "내용이 없습니다."}"""
+def _final_report_verdict(
+    evidence: EvidenceBundle,
+    quality_gates: list[QualityGateResult],
+) -> tuple[str, str]:
+    if any(gate.status.upper() == "FAIL" for gate in quality_gates):
+        return "품질 게이트 실패로 검토 보류", "Review hold due to failed quality gate"
+    if not evidence.claims:
+        return "근거 부족", "Insufficient evidence"
+    if evidence.extraction_mode != "structured-json":
+        return "초안: 추가 검증 필요", "Draft: verification required"
+    return "검토 가능한 근거 기반 초안", "Evidence-backed draft ready for review"
+
+
+def _source_mix_text(sources: list[SourceRecord], *, korean: bool) -> str:
+    if not sources:
+        return "수집된 출처 없음" if korean else "no source records collected"
+    counts = Counter(source.source_type or "unknown" for source in sources)
+    if korean:
+        labels = {
+            "official-docs": "공식 문서",
+            "standards": "표준",
+            "papers": "논문",
+            "general-web": "일반 웹",
+            "engineering-articles": "기술 아티클",
+        }
+        return ", ".join(f"{labels.get(kind, kind)} {count}개" for kind, count in sorted(counts.items()))
+    return ", ".join(f"{kind} {count}" for kind, count in sorted(counts.items()))
+
+
+def _korean_conclusion(
+    profile: ReportProfile,
+    profile_label_korean: str,
+    evidence: EvidenceBundle,
+    quality_gates: list[QualityGateResult],
+) -> str:
+    failed_gates = [gate for gate in quality_gates if gate.status.upper() == "FAIL"]
+    if not evidence.claims:
+        return "현재 수집된 근거가 없어 결론을 내릴 수 없습니다. 출처 수집을 보강한 뒤 다시 실행해야 합니다."
+    if failed_gates:
+        return (
+            "현재 보고서는 최종 판단용으로 사용하기 어렵습니다. "
+            f"{len(failed_gates)}개 품질 게이트가 실패했으며, 실패 항목을 해결한 뒤 재검토해야 합니다."
+        )
+    if evidence.extraction_mode != "structured-json":
+        return (
+            f"현재 보고서는 {profile_label_korean} 관점의 조사 초안입니다. "
+            "근거가 fallback 출처 요약 중심이므로, 핵심 결론은 확정 권고가 아니라 검토 대기 상태로 보아야 합니다."
+        )
+    return "수집된 구조화 근거 기준으로 검토 가능한 초안입니다. 다만 최종 의사결정 전 핵심 출처와 인용을 사람이 확인해야 합니다."
+
+
+def _original_conclusion(
+    profile: ReportProfile,
+    evidence: EvidenceBundle,
+    quality_gates: list[QualityGateResult],
+) -> str:
+    failed_gates = [gate for gate in quality_gates if gate.status.upper() == "FAIL"]
+    if not evidence.claims:
+        return "No conclusion can be stated because no evidence claims were collected. Strengthen source collection and run again."
+    if failed_gates:
+        return (
+            "This report should not be used as a final decision artifact yet. "
+            f"{len(failed_gates)} quality gate(s) failed and must be resolved before review."
+        )
+    if evidence.extraction_mode != "structured-json":
+        return (
+            f"This is a {profile.label} research draft. "
+            "Because the evidence is based on fallback source summaries, the assessment should be treated as pending verification rather than a confirmed recommendation."
+        )
+    return "This is an evidence-backed draft suitable for human review, but key citations still need to be checked before final decision-making."
+
+
+def _claim_summary_lines(evidence: EvidenceBundle, *, korean: bool) -> str:
+    if not evidence.claims:
+        return "- 아직 요약할 근거 주장이 없습니다." if korean else "- No evidence claims are available to summarize."
+    rows: list[str] = []
+    for claim in evidence.claims[:8]:
+        source = claim.source_url or claim.source_title or "No source captured."
+        if korean:
+            rows.append(
+                f"- {claim.claim_id}: {_translate_to_korean(claim.claim)} "
+                f"(신뢰도: {_translate_to_korean(claim.confidence)}, 유형: {_translate_to_korean(claim.source_type)}, 출처: {source})"
+            )
+        else:
+            rows.append(
+                f"- {claim.claim_id}: {claim.claim} "
+                f"(confidence: {claim.confidence}, type: {claim.source_type}, source: {source})"
+            )
+    remaining = len(evidence.claims) - 8
+    if remaining > 0:
+        rows.append(
+            f"- 추가 근거 {remaining}개는 아래 Evidence Appendix에서 확인하세요."
+            if korean
+            else f"- {remaining} additional claim(s) are listed in the Evidence Appendix."
+        )
+    return "\n".join(rows)
+
+
+def _profile_interpretation_texts(
+    profile: ReportProfile,
+    sources: list[SourceRecord],
+    evidence: EvidenceBundle,
+) -> tuple[str, str]:
+    counts = Counter(source.source_type for source in sources)
+    low_count = sum(1 for claim in evidence.claims if claim.confidence == "low")
+    missing_url_count = sum(1 for source in sources if not (source.url or source.canonical_url))
+    if profile.key == "paper":
+        return (
+            f"The current corpus contains {counts.get('papers', 0)} paper source(s). "
+            "The report should be used to compare methods, datasets, benchmarks, reproducibility signals, and practical applicability. "
+            f"{low_count} low-confidence claim(s) and {missing_url_count} source(s) without URLs must be resolved before promotion.",
+            f"현재 코퍼스에는 논문 출처 {counts.get('papers', 0)}개가 포함되어 있습니다. "
+            "방법론, 데이터셋, 벤치마크, 재현성 신호, 실무 적용 가능성을 비교하는 용도로 사용해야 합니다. "
+            f"승격 전 낮은 신뢰도 주장 {low_count}개와 URL이 없는 출처 {missing_url_count}개를 해소해야 합니다.",
+        )
+    if profile.key == "market":
+        return (
+            "Use this as a market-research draft that separates observable public signals from opportunity hypotheses. "
+            f"The run captured {counts.get('official-docs', 0)} official-docs source(s), {counts.get('standards', 0)} standards source(s), "
+            f"and {counts.get('papers', 0)} paper source(s). Pricing, adoption, vendor traction, and competitive positioning still need explicit public sources.",
+            "이 보고서는 공개적으로 관찰 가능한 신호와 기회 가설을 구분하는 시장조사 초안으로 보아야 합니다. "
+            f"이번 실행은 공식 문서 {counts.get('official-docs', 0)}개, 표준 {counts.get('standards', 0)}개, "
+            f"논문 {counts.get('papers', 0)}개를 수집했습니다. 가격, 도입 사례, 공급사 성과, 경쟁 포지셔닝은 명시적인 공개 출처 보강이 필요합니다.",
+        )
+    return (
+        "Use this as an architecture decision draft. Official documentation should anchor implementation details, standards should anchor governance and risk, and papers should stay as supporting context unless metadata is verified.",
+        "이 보고서는 아키텍처 의사결정 초안으로 보아야 합니다. 구현 세부사항은 공식 문서, 거버넌스와 위험은 표준 문서가 기준이 되어야 하며, 논문은 메타데이터 확인 전까지 보조 맥락으로 다루는 편이 안전합니다.",
+    )
+
+
+def _quality_limit_lines(
+    evidence: EvidenceBundle,
+    sources: list[SourceRecord],
+    quality_gates: list[QualityGateResult],
+    *,
+    korean: bool,
+) -> str:
+    failed_gates = [gate for gate in quality_gates if gate.status.upper() == "FAIL"]
+    missing_url_count = sum(1 for source in sources if not (source.url or source.canonical_url))
+    lines: list[str] = []
+    if korean:
+        lines.append(f"- 근거 추출 모드: `{evidence.extraction_mode}`")
+        if evidence.extraction_mode != "structured-json":
+            lines.append("- fallback 기반 주장은 최종 결론으로 사용하기 전에 원문 출처 확인이 필요합니다.")
+        if failed_gates:
+            lines.append(f"- 실패한 품질 게이트: {len(failed_gates)}개")
+        if missing_url_count:
+            lines.append(f"- URL이 누락된 출처: {missing_url_count}개")
+        if evidence.needs_verification:
+            lines.extend(f"- {_translate_to_korean(item)}" for item in evidence.needs_verification[:5])
+        if not lines:
+            lines.append("- 확인된 주요 한계가 없습니다.")
+    else:
+        lines.append(f"- Evidence extraction mode: `{evidence.extraction_mode}`")
+        if evidence.extraction_mode != "structured-json":
+            lines.append("- Fallback-derived claims require source verification before final use.")
+        if failed_gates:
+            lines.append(f"- Failed quality gates: {len(failed_gates)}")
+        if missing_url_count:
+            lines.append(f"- Sources missing URLs: {missing_url_count}")
+        if evidence.needs_verification:
+            lines.extend(f"- {item}" for item in evidence.needs_verification[:5])
+        if not lines:
+            lines.append("- No major quality limits captured.")
+    return "\n".join(lines)
+
+
+def _review_action_lines(
+    evidence: EvidenceBundle,
+    sources: list[SourceRecord],
+    quality_gates: list[QualityGateResult],
+    profile_label: str,
+    *,
+    korean: bool,
+) -> str:
+    low_count = sum(1 for claim in evidence.claims if claim.confidence == "low")
+    missing_url_count = sum(1 for source in sources if not (source.url or source.canonical_url))
+    failed_gates = [gate for gate in quality_gates if gate.status.upper() == "FAIL"]
+    if korean:
+        lines = [
+            f"- Evidence Ledger에서 {profile_label} 판단에 영향을 주는 핵심 주장을 우선 검증하세요.",
+            "- Service Blueprint는 보고서 본문을 읽은 뒤 구현 초안으로만 검토하세요.",
+        ]
+        if evidence.extraction_mode != "structured-json":
+            lines.append("- 운영 수준 보고서가 필요하면 live provider와 강화된 출처 설정으로 재실행하세요.")
+        if low_count:
+            lines.append(f"- 낮은 신뢰도 주장 {low_count}개를 해소하거나 불확실 항목으로 유지하세요.")
+        if missing_url_count:
+            lines.append(f"- URL이 없는 출처 {missing_url_count}개에 정확한 링크를 추가하세요.")
+        if failed_gates:
+            lines.append(f"- 실패한 품질 게이트 {len(failed_gates)}개를 해결하기 전 reviewed로 승격하지 마세요.")
+    else:
+        lines = [
+            f"- Verify high-impact claims in the Evidence Ledger before using the {profile_label} assessment.",
+            "- Treat the Service Blueprint as an implementation draft after reading this report.",
+        ]
+        if evidence.extraction_mode != "structured-json":
+            lines.append("- Re-run with a live provider and stronger source settings if production-grade confidence is required.")
+        if low_count:
+            lines.append(f"- Resolve {low_count} low-confidence claim(s) or keep them marked as uncertain.")
+        if missing_url_count:
+            lines.append(f"- Add exact URLs for {missing_url_count} source record(s).")
+        if failed_gates:
+            lines.append(f"- Do not promote the note to reviewed until {len(failed_gates)} failed quality gate(s) are resolved.")
+    return "\n".join(lines)
 
 
 def _profile_label_korean(profile: ReportProfile) -> str:
@@ -633,50 +908,6 @@ def _confidence_summary(evidence: EvidenceBundle) -> str:
     counts = Counter(claim.confidence for claim in evidence.claims)
     ordered = [f"{name}:{counts[name]}" for name in ("high", "medium", "low") if counts.get(name)]
     return ", ".join(ordered) or "no confidence labels"
-
-
-def _final_report_key_findings(evidence: EvidenceBundle, *, bilingual: bool) -> str:
-    if not evidence.claims:
-        return _paired_block(
-            "- No evidence claims were extracted, so no final findings can be stated yet.",
-            "- 추출된 근거 주장이 없어 아직 최종 발견사항을 작성할 수 없습니다.",
-            bilingual=bilingual,
-        )
-
-    lines: list[str] = []
-    if evidence.extraction_mode != "structured-json":
-        lines.append(
-            _paired_block(
-                f"- Evidence extraction mode is `{evidence.extraction_mode}`. Findings are derived from source summaries and require human verification.",
-                f"- 근거 추출 모드는 `{evidence.extraction_mode}`입니다. 발견사항은 출처 요약에서 파생되었으므로 사람의 검증이 필요합니다.",
-                bilingual=bilingual,
-            )
-        )
-
-    for claim in evidence.claims[:12]:
-        source = claim.source_title or claim.source_url or "No source captured."
-        original = (
-            f"- {claim.claim_id} (`{claim.confidence}`, `{claim.category}`): {claim.claim}\n"
-            f"  - Evidence: {claim.evidence}\n"
-            f"  - Source: {source}"
-        )
-        korean = (
-            f"- {claim.claim_id} (`{_translate_to_korean(claim.confidence)}`, `{_translate_to_korean(claim.category)}`): "
-            f"{_translate_to_korean(claim.claim)}\n"
-            f"  - 근거: {_translate_to_korean(claim.evidence)}\n"
-            f"  - 출처: {source}"
-        )
-        lines.append(_paired_block(original, korean, bilingual=bilingual))
-    remaining = len(evidence.claims) - 12
-    if remaining > 0:
-        lines.append(
-            _paired_block(
-                f"- {remaining} additional claim(s) are available in the Evidence Ledger.",
-                f"- 추가 근거 주장 {remaining}개는 Evidence Ledger에서 확인할 수 있습니다.",
-                bilingual=bilingual,
-            )
-        )
-    return "\n\n".join(lines)
 
 
 def _final_report_evidence_table(evidence: EvidenceBundle) -> str:
@@ -713,175 +944,6 @@ def _source_coverage_summary(sources: list[SourceRecord]) -> str:
         url = source.url or source.canonical_url or "Not captured"
         source_rows.append(f"| {_table_cell(source.title)} | {_table_cell(source.source_type)} | {_table_cell(url)} |")
     return "\n".join([*coverage_rows, "", *source_rows])
-
-
-def _final_report_profile_interpretation(
-    profile: ReportProfile,
-    evidence: EvidenceBundle,
-    sources: list[SourceRecord],
-    *,
-    bilingual: bool,
-) -> str:
-    counts = Counter(source.source_type for source in sources)
-    low_count = sum(1 for claim in evidence.claims if claim.confidence == "low")
-    missing_url_count = sum(1 for source in sources if not (source.url or source.canonical_url))
-    if profile.key == "paper":
-        original = (
-            f"The current corpus contains {counts.get('papers', 0)} paper source(s). "
-            "Use this report to compare methods, datasets, benchmarks, reproducibility signals, and practical applicability. "
-            f"{low_count} low-confidence claim(s) and {missing_url_count} source(s) without URLs must be resolved before promoting the paper analysis."
-        )
-        korean = (
-            f"현재 코퍼스에는 논문 출처 {counts.get('papers', 0)}개가 포함되어 있습니다. "
-            "이 보고서는 방법론, 데이터셋, 벤치마크, 재현성 신호, 실무 적용 가능성을 비교하는 용도로 사용하세요. "
-            f"논문 분석 노트를 승격하기 전 낮은 신뢰도 주장 {low_count}개와 URL이 없는 출처 {missing_url_count}개를 해소해야 합니다."
-        )
-    elif profile.key == "market":
-        original = (
-            "Use the current evidence as a market-research draft: separate observable public signals from opportunity hypotheses. "
-            f"The run captured {counts.get('official-docs', 0)} official-docs source(s), {counts.get('standards', 0)} standards source(s), "
-            f"and {counts.get('papers', 0)} paper source(s). Pricing, adoption, vendor traction, and competitive positioning still need explicit public sources."
-        )
-        korean = (
-            "현재 근거는 시장조사 초안으로 사용하세요. 공개적으로 관찰 가능한 신호와 기회 가설을 구분해야 합니다. "
-            f"이번 실행은 공식 문서 {counts.get('official-docs', 0)}개, 표준 {counts.get('standards', 0)}개, "
-            f"논문 {counts.get('papers', 0)}개를 수집했습니다. 가격, 도입 사례, 공급사 성과, 경쟁 포지셔닝은 명시적인 공개 출처 보강이 필요합니다."
-        )
-    else:
-        original = (
-            "Use the current evidence as an architecture decision draft. "
-            "Official documentation should anchor implementation details, standards should anchor governance and risk, "
-            "and papers should be treated as supporting context unless their metadata is verified."
-        )
-        korean = (
-            "현재 근거는 아키텍처 의사결정 초안으로 사용하세요. "
-            "구현 세부사항은 공식 문서가 기준이 되어야 하고, 거버넌스와 위험은 표준 문서가 기준이 되어야 하며, "
-            "논문은 메타데이터가 확인되기 전까지 보조 맥락으로 다루는 편이 안전합니다."
-        )
-    return _paired_block(original, korean, bilingual=bilingual)
-
-
-def _blueprint_review_summary(blueprint_markdown: str) -> tuple[str, str]:
-    body = _strip_markdown_frontmatter(blueprint_markdown)
-    if not body.strip():
-        return (
-            "No Service Blueprint body was captured. Review the Run Note and re-run synthesis after evidence coverage improves.",
-            "Service Blueprint 본문이 수집되지 않았습니다. Run Note를 확인하고 근거 커버리지를 보강한 뒤 합성을 다시 실행하세요.",
-        )
-    headings = [
-        line.lstrip("#").strip()
-        for line in body.splitlines()
-        if line.startswith("## ") and line.lstrip("#").strip()
-    ]
-    placeholder_markers = ("TBD", "검토 후", "근거 장부를 검토", "No sources collected yet")
-    placeholder_count = sum(body.count(marker) for marker in placeholder_markers)
-    fallback_hint = "Use an Obsidian-first workflow" in body or "source collection" in body
-    section_preview = ", ".join(headings[:8]) if headings else "no explicit sections"
-    fallback_sentence = (
-        " The blueprint appears to include fallback/template content, so do not treat it as a confirmed recommendation."
-        if fallback_hint or placeholder_count
-        else " The blueprint does not show obvious fallback markers, but key claims should still be checked against the Evidence Ledger."
-    )
-    fallback_sentence_ko = (
-        " Blueprint에 fallback/template 성격의 내용이 포함된 것으로 보이므로 확정 권고로 취급하지 마세요."
-        if fallback_hint or placeholder_count
-        else " Blueprint에서 뚜렷한 fallback 표지는 보이지 않지만, 핵심 주장은 여전히 Evidence Ledger와 대조해야 합니다."
-    )
-    return (
-        f"The generated Service Blueprint contains {len(headings)} section(s): {section_preview}. "
-        f"Placeholder-like markers found: {placeholder_count}.{fallback_sentence}",
-        f"생성된 Service Blueprint에는 {len(headings)}개 섹션이 있습니다: {section_preview}. "
-        f"플레이스홀더로 보이는 표지는 {placeholder_count}개입니다.{fallback_sentence_ko}",
-    )
-
-
-def _final_report_quality_section(
-    evidence: EvidenceBundle,
-    *,
-    quality_gates: list[QualityGateResult],
-    confidence_summary: str,
-    bilingual: bool,
-) -> str:
-    mode_block = _paired_block(
-        f"- Evidence extraction mode: `{evidence.extraction_mode}`\n- Claim confidence distribution: {confidence_summary}",
-        f"- 근거 추출 모드: `{evidence.extraction_mode}`\n- 주장 신뢰도 분포: {confidence_summary}",
-        bilingual=bilingual,
-    )
-    conflicts = "\n".join(f"- {item}" for item in evidence.conflicts) or "- None captured yet."
-    needs = "\n".join(f"- {item}" for item in evidence.needs_verification) or "- None captured yet."
-    return f"""{mode_block}
-
-### Quality Gates
-
-{_quality_gate_table(quality_gates)}
-
-### Conflicts
-
-{_localized_block(conflicts, bilingual=bilingual)}
-
-### Needs Verification
-
-{_localized_block(needs, bilingual=bilingual)}"""
-
-
-def _final_report_review_actions(
-    evidence: EvidenceBundle,
-    *,
-    sources: list[SourceRecord],
-    quality_gates: list[QualityGateResult],
-    profile_label: str,
-    profile_label_korean: str,
-    bilingual: bool,
-) -> str:
-    low_count = sum(1 for claim in evidence.claims if claim.confidence == "low")
-    missing_url_count = sum(1 for source in sources if not (source.url or source.canonical_url))
-    failed_gates = [gate for gate in quality_gates if gate.status.upper() == "FAIL"]
-    original_lines = [
-        f"Open the linked Evidence Ledger and verify each high-impact claim before using the {profile_label} recommendation.",
-        "Open the Service Blueprint only after reading this report summary and the quality gate table.",
-    ]
-    korean_lines = [
-        f"연결된 Evidence Ledger를 열고 {profile_label_korean} 권고에 사용하기 전 영향도가 큰 주장을 하나씩 검증하세요.",
-        "이 보고서 요약과 품질 게이트 표를 읽은 뒤 Service Blueprint를 검토하세요.",
-    ]
-    if evidence.extraction_mode != "structured-json":
-        original_lines.append("Re-run with a live LLM provider or stronger source collection if the report needs production-grade confidence.")
-        korean_lines.append("운영 수준의 신뢰도가 필요하면 live LLM provider 또는 더 강한 출처 수집 설정으로 다시 실행하세요.")
-    if low_count:
-        original_lines.append(f"Resolve {low_count} low-confidence claim(s) or keep them explicitly marked as uncertain.")
-        korean_lines.append(f"낮은 신뢰도 주장 {low_count}개를 해소하거나 불확실 항목으로 명확히 표시하세요.")
-    if missing_url_count:
-        original_lines.append(f"Add exact URLs for {missing_url_count} source record(s) before promotion.")
-        korean_lines.append(f"노트를 승격하기 전 출처 {missing_url_count}개에 정확한 URL을 추가하세요.")
-    if failed_gates:
-        original_lines.append(f"Address {len(failed_gates)} failed quality gate(s) before marking the report reviewed.")
-        korean_lines.append(f"보고서를 reviewed로 표시하기 전 실패한 품질 게이트 {len(failed_gates)}개를 해결하세요.")
-
-    original = "\n".join(f"- {line}" for line in original_lines)
-    korean = "\n".join(f"- {line}" for line in korean_lines)
-    return _paired_block(original, korean, bilingual=bilingual)
-
-
-def _strip_markdown_frontmatter(markdown: str) -> str:
-    text = markdown.strip()
-    if not text.startswith("---\n"):
-        return text
-    end = text.find("\n---", 4)
-    if end == -1:
-        return text
-    return text[end + len("\n---") :].strip()
-
-
-def _demote_markdown_headings(markdown: str, *, levels: int) -> str:
-    demoted: list[str] = []
-    for line in markdown.splitlines():
-        if line.startswith("#"):
-            count = len(line) - len(line.lstrip("#"))
-            if count > 0 and count < 6 and line[count : count + 1] == " ":
-                demoted.append("#" * min(6, count + levels) + line[count:])
-                continue
-        demoted.append(line)
-    return "\n".join(demoted)
 
 
 def _wikilink(path: str, vault_path: str) -> str:
