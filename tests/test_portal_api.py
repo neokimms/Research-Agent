@@ -97,6 +97,7 @@ class PortalAPITests(unittest.TestCase):
         self.assertIn(b".preset-grid", css.body)
         self.assertIn(b".progress-steps", css.body)
         self.assertIn(b".result-section", css.body)
+        self.assertIn(b".result-warning", css.body)
         self.assertIn(b".markdown-preview", css.body)
         self.assertIn(b".action-list", css.body)
         self.assertIn(b".guide-page", css.body)
@@ -114,6 +115,9 @@ class PortalAPITests(unittest.TestCase):
         self.assertIn(b"bindLanguageTabs", js.body)
         self.assertIn(b"data-language-tab", js.body)
         self.assertIn("결과 보고서".encode("utf-8"), js.body)
+        self.assertIn("조사 결과로 사용하기 전에 재실행이 필요합니다".encode("utf-8"), js.body)
+        self.assertIn("검토용 보고서 보기".encode("utf-8"), js.body)
+        self.assertNotIn('링크는 "Obsidian 위치"'.encode("utf-8"), js.body)
         self.assertIn("보고서 전체 보기".encode("utf-8"), js.body)
         self.assertIn("최종 보고서 보기".encode("utf-8"), js.body)
         self.assertIn("Blueprint 보고서 보기".encode("utf-8"), js.body)
@@ -229,6 +233,27 @@ class PortalAPITests(unittest.TestCase):
         self.assertEqual(run["objective"], "agentic RAG 구조 분류")
         self.assertEqual(run["rerun_of"], "failed-source")
         self.assertTrue(run["paths"]["planned_artifacts"])
+
+    def test_market_run_settings_enable_relevance_and_fallback_gates(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            adapter = ResearchPortalAPIAdapter(
+                _settings(Path(temp)),
+                job_store_path=Path(temp) / "jobs.json",
+            )
+            try:
+                settings = adapter._settings_for_run(
+                    "gemini",
+                    source_priority=["general-web", "official-docs"],
+                    bilingual=True,
+                    research_type="market",
+                )
+            finally:
+                adapter.close(wait=False)
+
+        self.assertEqual(settings.quality_gates.min_official_sources, 0)
+        self.assertTrue(settings.quality_gates.fail_on_fallback_evidence)
+        self.assertGreaterEqual(settings.quality_gates.min_relevant_sources, 2)
+        self.assertGreaterEqual(settings.quality_gates.min_relevant_source_ratio, 0.5)
 
     def test_completed_live_run_includes_review_preview_and_obsidian_links(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

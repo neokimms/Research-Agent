@@ -68,6 +68,18 @@ sources:
     - semantic-scholar
     - crossref
     - openalex
+  market_source_domains:
+    - sec.gov
+    - nasdaq.com
+    - nyse.com
+    - reuters.com
+    - bloomberg.com
+    - axios.com
+    - techcrunch.com
+    - kiplinger.com
+    - marketwatch.com
+    - finance.yahoo.com
+    - investing.com
 
 quality_gates:
   min_official_sources: 2
@@ -75,4 +87,7 @@ quality_gates:
   require_source_urls: true
   require_evidence_ledger: true
   require_uncertainty_section: true
+  fail_on_fallback_evidence: false
+  min_relevant_sources: 0
+  min_relevant_source_ratio: 0.0
   block_vault_write_on_fail: false

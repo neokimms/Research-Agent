@@ -519,8 +519,10 @@ PYTHONPATH=src python3 -m research_agent --vault /path/to/ObsidianVault vault-he
 
 - 최소 official docs source 수
 - source URL 누락 여부
+- source note가 topic과 직접 관련되어 보이는지 여부
 - run `checked_at` 존재 여부
 - evidence ledger claim 존재 여부
+- fallback evidence extraction 사용 여부
 - service blueprint의 `Still Uncertain` 섹션 존재 여부
 
 결과는 `PASS`, `WARN`, `FAIL` 중 하나로 기록됩니다. 기준값은 설정 파일의 `[quality_gates]`에서 조정합니다. 기본값은 실패를 기록하고 계속 쓰는 방식입니다. 운영 vault에서 실패 산출물 생성을 막으려면 다음 옵션을 켭니다.
@@ -528,6 +530,15 @@ PYTHONPATH=src python3 -m research_agent --vault /path/to/ObsidianVault vault-he
 ```toml
 [quality_gates]
 block_vault_write_on_fail = true
+```
+
+시장조사처럼 일반 웹, 공시, 금융 뉴스가 핵심인 실행에서는 official docs 개수보다 source relevance가 더 중요합니다. 포털의 `시장 조사` preset은 자동으로 fallback evidence와 낮은 topic relevance를 품질 실패로 표시합니다. CLI/config에서 직접 켜려면 다음처럼 설정합니다.
+
+```toml
+[quality_gates]
+fail_on_fallback_evidence = true
+min_relevant_sources = 2
+min_relevant_source_ratio = 0.5
 ```
 
 쓰기 중 오류가 발생하면 이번 run에서 생성한 partial artifact를 정리합니다. 이 동작은 기본값이 `true`입니다.

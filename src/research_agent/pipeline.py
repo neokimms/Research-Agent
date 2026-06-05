@@ -6,7 +6,14 @@ from pathlib import Path
 from .bilingual_audit import render_bilingual_audit_run_summary, run_bilingual_audit
 from .blueprint import stabilize_service_blueprint
 from .citations import normalize_source_record
-from .collectors import DEFAULT_OFFICIAL_DOC_LIMIT, collect_official_doc_sources, collect_paper_sources, seed_official_sources, seed_standard_sources
+from .collectors import (
+    DEFAULT_OFFICIAL_DOC_LIMIT,
+    collect_market_sources,
+    collect_official_doc_sources,
+    collect_paper_sources,
+    seed_official_sources,
+    seed_standard_sources,
+)
 from .config import Settings
 from .evidence import extract_evidence
 from .gemini_client import GeminiError, GeminiGenerateClient, gemini_output_text
@@ -115,6 +122,7 @@ class ResearchPipeline:
             blueprint_markdown=blueprint_markdown,
             checked_at=checked_at,
             evidence_path=str(evidence_path_preview),
+            topic=topic,
         )
         self._raise_on_quality_gate_failures(quality_gates)
 
@@ -309,9 +317,21 @@ class ResearchPipeline:
         collect_official = not priority or "official-docs" in priority
         collect_standards = not priority or "standards" in priority
         collect_papers = not priority or "papers" in priority
+        collect_market = not priority or "general-web" in priority or "engineering-articles" in priority
 
         records: list[SourceRecord] = []
         provider = select_llm_provider(self.settings)
+
+        if collect_market and not offline:
+            records.extend(
+                collect_market_sources(
+                    topic,
+                    self.settings.sources,
+                    api_key=provider.api_key,
+                    model=self._model_for(provider, "planner"),
+                    provider=provider.provider,
+                )
+            )
 
         if collect_official:
             if offline:
@@ -345,6 +365,17 @@ class ResearchPipeline:
     def _planned_sources(self, topic: str, *, offline: bool, max_papers_per_source: int) -> list[SourceRecord]:
         records: list[SourceRecord] = []
         provider = select_llm_provider(self.settings)
+        priority = self.settings.sources.priority
+        if not offline and ("general-web" in priority or "engineering-articles" in priority):
+            for index in range(3):
+                records.append(
+                    SourceRecord(
+                        title=f"market/web source search result {index + 1}",
+                        url="",
+                        source_type="general-web",
+                        summary="Dynamic market, filing, financial-news, or web source placeholder for dry-run planning.",
+                    )
+                )
         if offline or not provider.available:
             records.extend(seed_official_sources(topic, self.settings.sources))
         else:

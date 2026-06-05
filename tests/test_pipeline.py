@@ -216,6 +216,39 @@ class PipelineTests(unittest.TestCase):
             blueprint = Path(artifacts.service_blueprint).read_text(encoding="utf-8")
             self.assertLess(blueprint.index('- "standards"'), blueprint.index('- "official-docs"'))
 
+    def test_general_web_priority_invokes_market_source_collector(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            settings = Settings(
+                app=AppSettings(),
+                obsidian=ObsidianSettings(vault_path=Path(temp)),
+                openai=OpenAISettings(api_key_env="RESEARCH_AGENT_MISSING_KEY"),
+                sources=SourceSettings(
+                    priority=["general-web"],
+                    official_doc_domains=[],
+                    standards_domains=[],
+                    paper_sources=[],
+                ),
+                quality_gates=QualityGateSettings(min_official_sources=0, block_vault_write_on_fail=False),
+            )
+
+            with patch(
+                "research_agent.pipeline.collect_market_sources",
+                return_value=[
+                    SourceRecord(
+                        title="SpaceX Form S-1 IPO filing",
+                        url="https://www.sec.gov/Archives/edgar/data/1181412/000162828026036936/0001628280-26-036936-index.htm",
+                        source_type="general-web",
+                        summary="SEC EDGAR filing page for SpaceX IPO.",
+                        source_provider="openai-web-search",
+                    )
+                ],
+            ) as collector:
+                artifacts = ResearchPipeline(settings).run("스페이스 X 상장", offline=False, research_type="market")
+
+            collector.assert_called_once()
+            self.assertEqual(len(artifacts.source_notes), 1)
+            self.assertIn("10_Sources/web", artifacts.source_notes[0])
+
     def test_offline_run_uses_selected_market_report_profile(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             settings = Settings(

@@ -94,6 +94,19 @@ class SourceSettings:
     official_doc_domains: list[str] = field(default_factory=list)
     standards_domains: list[str] = field(default_factory=list)
     paper_sources: list[str] = field(default_factory=lambda: ["arxiv", "semantic-scholar", "crossref", "openalex"])
+    market_source_domains: list[str] = field(default_factory=lambda: [
+        "sec.gov",
+        "nasdaq.com",
+        "nyse.com",
+        "reuters.com",
+        "bloomberg.com",
+        "axios.com",
+        "techcrunch.com",
+        "kiplinger.com",
+        "marketwatch.com",
+        "finance.yahoo.com",
+        "investing.com",
+    ])
 
 
 @dataclass(frozen=True)
@@ -103,6 +116,9 @@ class QualityGateSettings:
     require_source_urls: bool = True
     require_evidence_ledger: bool = True
     require_uncertainty_section: bool = True
+    fail_on_fallback_evidence: bool = False
+    min_relevant_sources: int = 0
+    min_relevant_source_ratio: float = 0.0
     block_vault_write_on_fail: bool = True
 
 
@@ -213,6 +229,7 @@ def load_settings(path: Path, *, vault_override: Path | None = None, provider_ov
             official_doc_domains=_str_list(source_data.get("official_doc_domains"), []),
             standards_domains=_str_list(source_data.get("standards_domains"), []),
             paper_sources=_str_list(source_data.get("paper_sources"), ["arxiv", "semantic-scholar", "crossref", "openalex"]),
+            market_source_domains=_str_list(source_data.get("market_source_domains"), SourceSettings().market_source_domains),
         ),
         quality_gates=QualityGateSettings(
             min_official_sources=int(gate_data.get("min_official_sources", 2)),
@@ -220,6 +237,9 @@ def load_settings(path: Path, *, vault_override: Path | None = None, provider_ov
             require_source_urls=bool(gate_data.get("require_source_urls", True)),
             require_evidence_ledger=bool(gate_data.get("require_evidence_ledger", True)),
             require_uncertainty_section=bool(gate_data.get("require_uncertainty_section", True)),
+            fail_on_fallback_evidence=bool(gate_data.get("fail_on_fallback_evidence", False)),
+            min_relevant_sources=int(gate_data.get("min_relevant_sources", 0)),
+            min_relevant_source_ratio=float(gate_data.get("min_relevant_source_ratio", 0.0)),
             block_vault_write_on_fail=bool(gate_data.get("block_vault_write_on_fail", True)),
         ),
         common=common,

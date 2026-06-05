@@ -8,6 +8,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from research_agent.collectors import (
+    collect_market_sources,
     collect_official_doc_sources,
     collect_paper_sources,
     deduplicate_sources,
@@ -78,6 +79,48 @@ class CollectorTests(unittest.TestCase):
         self.assertGreater(records[0].source_score, 0.8)
         self.assertEqual(calls["create"]["tools"][0]["type"], "web_search")
         self.assertEqual(calls["create"]["tools"][0]["filters"]["allowed_domains"], ["developers.openai.com"])
+
+    def test_market_sources_use_web_search_as_general_web_records(self) -> None:
+        calls = {}
+
+        class FakeClient:
+            def __init__(self, **kwargs):
+                calls["init"] = kwargs
+
+            def create(self, **kwargs):
+                calls["create"] = kwargs
+                return {
+                    "output_text": """
+[
+  {
+    "title": "SpaceX Form S-1 IPO filing",
+    "url": "https://www.sec.gov/Archives/edgar/data/1181412/000162828026036936/0001628280-26-036936-index.htm",
+    "summary": "SEC EDGAR filing page for the SpaceX IPO.",
+    "domain": "sec.gov"
+  },
+  {
+    "title": "Unrelated blog",
+    "url": "https://example.com/spacex",
+    "summary": "Filtered out.",
+    "domain": "example.com"
+  }
+]
+"""
+                }
+
+        with patch("research_agent.collectors.OpenAIResponsesClient", FakeClient):
+            records = collect_market_sources(
+                "스페이스 X 상장",
+                SourceSettings(market_source_domains=["sec.gov", "reuters.com"]),
+                api_key="sk-test-123456",
+                model="gpt-4o-mini",
+            )
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].source_type, "general-web")
+        self.assertEqual(records[0].source_provider, "openai-web-search")
+        self.assertIn("sec.gov", records[0].url)
+        self.assertEqual(calls["create"]["tools"][0]["filters"]["allowed_domains"], ["sec.gov", "reuters.com"])
         self.assertEqual(calls["create"]["tool_choice"], "required")
 
     def test_allowed_domain_filter_rejects_malformed_urls(self) -> None:

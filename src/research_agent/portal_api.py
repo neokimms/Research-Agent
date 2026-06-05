@@ -605,6 +605,7 @@ class ResearchPortalAPIAdapter:
                 provider,
                 source_priority=source_priority,
                 bilingual=bilingual,
+                research_type=report_profile,
             )
             research_context = {
                 "research_type": research_type,
@@ -679,6 +680,7 @@ class ResearchPortalAPIAdapter:
         *,
         source_priority: list[str],
         bilingual: bool | None,
+        research_type: str = "architecture",
     ) -> Settings:
         llm = self.settings.llm if provider == self.settings.llm.provider else LLMSettings(provider=provider)
         sources = self.settings.sources
@@ -687,7 +689,22 @@ class ResearchPortalAPIAdapter:
         report = self.settings.report
         if bilingual is not None:
             report = replace(report, bilingual=bilingual)
-        return replace(self.settings, llm=llm, sources=sources, report=report)
+        quality_gates = self.settings.quality_gates
+        if research_type == "market":
+            quality_gates = replace(
+                quality_gates,
+                min_official_sources=0,
+                fail_on_fallback_evidence=True,
+                min_relevant_sources=max(2, quality_gates.min_relevant_sources),
+                min_relevant_source_ratio=max(0.5, quality_gates.min_relevant_source_ratio),
+            )
+        else:
+            quality_gates = replace(
+                quality_gates,
+                fail_on_fallback_evidence=True,
+                min_relevant_sources=max(1, quality_gates.min_relevant_sources),
+            )
+        return replace(self.settings, llm=llm, sources=sources, quality_gates=quality_gates, report=report)
 
     def _update_job_stage(self, job_id: str, stage: str) -> None:
         with self._lock:
@@ -2352,6 +2369,33 @@ button.primary:hover {
   white-space: pre-wrap;
 }
 
+.result-warning {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid #f2cf8a;
+  border-left: 4px solid var(--warn);
+  border-radius: 8px;
+  background: #fff8eb;
+}
+
+.result-warning.fail {
+  border-color: #f0b4b4;
+  border-left-color: var(--bad);
+  background: #fff5f5;
+}
+
+.result-warning strong {
+  color: var(--ink);
+}
+
+.result-warning ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .result-stack {
   display: grid;
   gap: 18px;
@@ -3060,12 +3104,14 @@ function renderJobResult(job) {
   const tasks = Array.isArray(review.review_tasks) ? review.review_tasks : [];
   const links = review.obsidian_links || {};
   const paths = summary.paths || {};
+  const trustWarning = reportTrustWarning(quality);
   state.reportTabs = {
     summary: `
       <div class="result-stack">
+        ${trustWarning}
         ${resultSection("결과 보고서", `
-          <div class="artifact-grid">${renderReportLinks(links, paths)}</div>
-          <div class="action-detail">아래 버튼은 웹 포털 안에서 보고서 본문을 엽니다. Obsidian 원본 링크는 "Obsidian 위치" 탭에서 확인합니다.</div>
+          <div class="artifact-grid">${renderReportLinks(links, paths, quality)}</div>
+          <div class="action-detail">${trustWarning ? "품질 실패 결과는 검토용으로만 열립니다. Obsidian 원본 링크는 Obsidian 위치 탭에서 확인합니다." : "아래 버튼은 웹 포털 안에서 보고서 본문을 엽니다. Obsidian 원본 링크는 Obsidian 위치 탭에서 확인합니다."}</div>
         `, "Report")}
         ${resultSection("요약", `
           <div class="context-grid">
@@ -3079,7 +3125,7 @@ function renderJobResult(job) {
         `, "Summary")}
       </div>
     `,
-    final: `<div class="result-stack">${resultSection("최종 보고서", renderLanguageTabbedMarkdown(finalMarkdown || markdown || "최종 보고서 preview가 없습니다."), "Final Report")}</div>`,
+    final: `<div class="result-stack">${trustWarning}${resultSection("최종 보고서", renderLanguageTabbedMarkdown(finalMarkdown || markdown || "최종 보고서 preview가 없습니다."), "Final Report")}</div>`,
     blueprint: `<div class="result-stack">${resultSection("Service Blueprint", `<div class="markdown-preview">${renderMarkdown(markdown || "Service Blueprint preview가 없습니다.")}</div>`, "5. Blueprint")}</div>`,
     evidence: `
       <div class="result-stack">
@@ -3096,12 +3142,13 @@ function renderJobResult(job) {
   el("resultOutput").className = "result-output";
   el("resultOutput").innerHTML = `
     <div class="result-compact">
+      ${trustWarning}
       ${resultSection("결과 보고서", `
-        <div class="artifact-grid compact-artifacts">${renderReportLinks(links, paths)}</div>
+        <div class="artifact-grid compact-artifacts">${renderReportLinks(links, paths, quality)}</div>
         <div class="report-summary-actions">
           <button id="openReportModalButton" class="report-open-button" type="button">보고서 전체 보기</button>
         </div>
-        <div class="action-detail">보고서 본문은 웹 포털에서 바로 확인할 수 있고, Obsidian 원본 파일도 함께 생성됩니다.</div>
+        <div class="action-detail">${trustWarning ? "이 run은 품질 게이트 실패로 최종 판단에 사용할 수 없습니다. 실패 항목을 해결한 뒤 재실행하세요." : "보고서 본문은 웹 포털에서 바로 확인할 수 있고, Obsidian 원본 파일도 함께 생성됩니다."}</div>
       `, "Report")}
       ${resultSection("요약", `
         <div class="context-grid">
@@ -3186,6 +3233,26 @@ function qualitySummaryText(quality) {
   return `PASS / 전체 ${quality.length}`;
 }
 
+function failedQualityGates(quality) {
+  return quality.filter((item) => String(item.status || "").toUpperCase() === "FAIL");
+}
+
+function reportTrustWarning(quality) {
+  const failures = failedQualityGates(quality);
+  if (!failures.length) {
+    return "";
+  }
+  const items = failures.slice(0, 4).map((item) => `<li>${escapeHtml(item.name || "quality gate")}: ${escapeHtml(item.detail || "")}</li>`).join("");
+  const hidden = failures.length > 4 ? `<li>그 외 ${failures.length - 4}건</li>` : "";
+  return `
+    <div class="result-warning fail">
+      <strong>조사 결과로 사용하기 전에 재실행이 필요합니다.</strong>
+      <div class="action-detail">수집된 출처나 근거 추출이 요청과 맞지 않아 최종 보고서가 검토 보류 상태입니다.</div>
+      <ul>${items}${hidden}</ul>
+    </div>
+  `;
+}
+
 function bindReportSummaryActions() {
   const button = el("openReportModalButton");
   if (button) {
@@ -3255,9 +3322,10 @@ function renderArtifactLinks(links, paths) {
   return rows.join("") || `<div class="json-fallback">산출물 링크가 없습니다.</div>`;
 }
 
-function renderReportLinks(links, paths) {
+function renderReportLinks(links, paths, quality = []) {
+  const blocked = failedQualityGates(quality).length > 0;
   const targets = [
-    { tab: "final", path: "final_report", label: "최종 보고서 보기", detail: "Obsidian에 저장되는 대표 보고서" },
+    { tab: "final", path: "final_report", label: blocked ? "검토용 보고서 보기" : "최종 보고서 보기", detail: blocked ? "품질 게이트 실패로 최종 판단 금지" : "Obsidian에 저장되는 대표 보고서" },
     { tab: "blueprint", path: "service_blueprint", label: "Blueprint 보고서 보기", detail: "최종 합성 보고서" },
     { tab: "evidence", path: "evidence_ledger", label: "Evidence Ledger 보기", detail: "claim과 citation 근거 원장" },
     { tab: "run", path: "run_note", label: "Run Note 보기", detail: "실행 로그와 품질 점검" }

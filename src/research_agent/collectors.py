@@ -76,6 +76,23 @@ def collect_standard_sources(
     return _collect_standards_with_openai(topic, source_settings, api_key=api_key, model=model, limit=limit)
 
 
+def collect_market_sources(
+    topic: str,
+    source_settings: SourceSettings,
+    *,
+    api_key: str | None,
+    model: str,
+    provider: str = "openai",
+    limit: int = 6,
+) -> list[SourceRecord]:
+    domains = [domain.strip().lower() for domain in source_settings.market_source_domains if domain.strip()]
+    if not api_key:
+        return []
+    if provider == "gemini":
+        return _collect_market_sources_with_gemini(topic, domains, api_key=api_key, model=model, limit=limit)
+    return _collect_market_sources_with_openai(topic, domains, api_key=api_key, model=model, limit=limit)
+
+
 def _collect_official_docs_with_openai(
     topic: str,
     source_settings: SourceSettings,
@@ -183,6 +200,49 @@ def _collect_standards_with_openai(
     return seed_standard_sources(topic, source_settings, limit=limit)
 
 
+def _collect_market_sources_with_openai(
+    topic: str,
+    domains: list[str],
+    *,
+    api_key: str,
+    model: str,
+    limit: int,
+) -> list[SourceRecord]:
+    client = OpenAIResponsesClient(api_key=api_key, default_model=model, timeout_seconds=60)
+    tool: dict[str, object] = {
+        "type": "web_search",
+        "search_context_size": "medium",
+    }
+    if domains:
+        tool["filters"] = {"allowed_domains": domains}
+    try:
+        response = client.create(
+            input_text=_market_sources_prompt(topic, domains, limit),
+            instructions=(
+                "You find high-signal market research sources. "
+                "Prioritize official filings, exchange pages, company investor pages, and reputable financial news. "
+                "Return only JSON with title, url, summary, and domain."
+            ),
+            model=model,
+            tools=[tool],
+            tool_choice="required",
+        )
+    except OpenAIError as exc:
+        logger.warning(
+            "market source collection failed",
+            extra={"stage": "collect_market_sources", "provider": "openai", "topic": topic, "error": str(exc)},
+        )
+        return []
+    return _records_from_official_response(
+        response,
+        text=output_text(response),
+        allowed_domains=domains,
+        source_provider="openai-web-search",
+        source_type="general-web",
+        limit=limit,
+    )
+
+
 def _collect_official_docs_with_gemini(
     topic: str,
     source_settings: SourceSettings,
@@ -274,6 +334,42 @@ def _collect_standards_with_gemini(
     return seed_standard_sources(topic, source_settings, limit=limit)
 
 
+def _collect_market_sources_with_gemini(
+    topic: str,
+    domains: list[str],
+    *,
+    api_key: str,
+    model: str,
+    limit: int,
+) -> list[SourceRecord]:
+    client = GeminiGenerateClient(api_key=api_key, default_model=model, timeout_seconds=60)
+    try:
+        response = client.generate(
+            input_text=_market_sources_prompt(topic, domains, limit),
+            instructions=(
+                "You find high-signal market research sources using Google Search. "
+                "Prioritize official filings, exchange pages, company investor pages, and reputable financial news. "
+                "Return JSON only with title, url, summary, and domain."
+            ),
+            model=model,
+            tools=[{"google_search": {}}],
+        )
+    except GeminiError as exc:
+        logger.warning(
+            "market source collection failed",
+            extra={"stage": "collect_market_sources", "provider": "gemini", "topic": topic, "error": str(exc)},
+        )
+        return []
+    return _records_from_official_response(
+        response,
+        text=gemini_output_text(response),
+        allowed_domains=domains,
+        source_provider="gemini-google-search",
+        source_type="general-web",
+        limit=limit,
+    )
+
+
 def seed_standard_sources(topic: str, source_settings: SourceSettings, *, limit: int = 3) -> list[SourceRecord]:
     records: list[SourceRecord] = []
     for domain in source_settings.standards_domains[:limit]:
@@ -332,6 +428,36 @@ Return JSON only:
     "url": "https://official.domain/path",
     "summary": "One sentence explaining why this page is relevant.",
     "domain": "official.domain"
+  }}
+]
+"""
+
+
+def _market_sources_prompt(topic: str, domains: list[str], limit: int) -> str:
+    domain_hint = "\n".join(f"- {domain}" for domain in domains) if domains else "- any high-signal public source"
+    return f"""Topic:
+{topic}
+
+Preferred market/source domains:
+{domain_hint}
+
+Find up to {limit} high-signal sources that directly answer the market research request.
+For IPO, public listing, stock-market, or competitor-impact topics, prefer:
+- SEC EDGAR filing detail pages and prospectus documents
+- exchange/listing pages
+- company investor relations or official announcements
+- reputable financial news and market analysis
+- domestic-market sources when the topic asks for local market impact
+
+Reject generic pages that do not mention the core company, product, event, or market named in the topic.
+
+Return JSON only:
+[
+  {{
+    "title": "Exact page title",
+    "url": "https://source.domain/path",
+    "summary": "One sentence explaining the exact relevance to the topic.",
+    "domain": "source.domain"
   }}
 ]
 """
@@ -433,6 +559,8 @@ def _url_in_allowed_domains(url: str, allowed_domains: list[str]) -> bool:
     netloc = parsed.netloc.lower()
     if netloc.startswith("www."):
         netloc = netloc[4:]
+    if not allowed_domains:
+        return True
     return any(netloc == domain or netloc.endswith(f".{domain}") for domain in allowed_domains)
 
 

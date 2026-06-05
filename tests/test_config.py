@@ -30,11 +30,17 @@ synthesis = "gpt-5.5"
 [gemini.models]
 synthesis = "gemini-2.5-flash"
 
+[sources]
+market_source_domains = ["sec.gov", "reuters.com"]
+
 [report]
 bilingual = false
 
 [quality_gates]
 block_vault_write_on_fail = true
+fail_on_fallback_evidence = true
+min_relevant_sources = 2
+min_relevant_source_ratio = 0.5
 
 [pipeline]
 cleanup_partial_artifacts = false
@@ -45,10 +51,14 @@ cleanup_partial_artifacts = false
             self.assertEqual(settings.obsidian.vault_path, vault)
             self.assertEqual(settings.obsidian.final_report_dir, "Reports")
             self.assertEqual(settings.openai.models.synthesis, "gpt-5.5")
+            self.assertEqual(settings.sources.market_source_domains, ["sec.gov", "reuters.com"])
             self.assertEqual(settings.llm.provider, "auto")
             self.assertEqual(settings.gemini.models.synthesis, "gemini-2.5-flash")
             self.assertFalse(settings.report.bilingual)
             self.assertTrue(settings.quality_gates.block_vault_write_on_fail)
+            self.assertTrue(settings.quality_gates.fail_on_fallback_evidence)
+            self.assertEqual(settings.quality_gates.min_relevant_sources, 2)
+            self.assertEqual(settings.quality_gates.min_relevant_source_ratio, 0.5)
             self.assertFalse(settings.pipeline.cleanup_partial_artifacts)
 
     def test_rejects_invalid_timezone(self) -> None:

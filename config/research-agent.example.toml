@@ -29,11 +29,11 @@ overwrite_reviewed_notes = false
 api_key_env = "OPENAI_API_KEY"
 
 [openai.models]
-planner = "gpt-5.4-mini"
-extractor = "gpt-5.4-mini"
-classifier = "gpt-5.4-mini"
-synthesis = "gpt-5.5"
-cheap_triage = "gpt-5.4-nano"
+planner = "gpt-4o-mini"
+extractor = "gpt-4o-mini"
+classifier = "gpt-4o-mini"
+synthesis = "gpt-4o"
+cheap_triage = "gpt-4o-mini"
 
 [gemini]
 api_key_env = "GEMINI_API_KEY"
@@ -74,6 +74,19 @@ paper_sources = [
   "crossref",
   "openalex",
 ]
+market_source_domains = [
+  "sec.gov",
+  "nasdaq.com",
+  "nyse.com",
+  "reuters.com",
+  "bloomberg.com",
+  "axios.com",
+  "techcrunch.com",
+  "kiplinger.com",
+  "marketwatch.com",
+  "finance.yahoo.com",
+  "investing.com",
+]
 
 [quality_gates]
 min_official_sources = 2
@@ -81,4 +94,7 @@ require_checked_at = true
 require_source_urls = true
 require_evidence_ledger = true
 require_uncertainty_section = true
+fail_on_fallback_evidence = false
+min_relevant_sources = 0
+min_relevant_source_ratio = 0.0
 block_vault_write_on_fail = false
